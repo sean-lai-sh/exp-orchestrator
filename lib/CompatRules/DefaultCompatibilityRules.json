@@ -1,11 +1,12 @@
 [
     { "from": "int", "to": "int", "result": "ok" },
     { "from": "int", "to": "float", "result": "ok" },
-    { "from": "int", "to": "str", "result": "warn" },
+    { "from": "int", "to": "str", "result": "ok" },
     { "from": "float", "to": "float", "result": "ok" },
     { "from": "float", "to": "str", "result": "warn" },
     { "from": "str", "to": "str", "result": "ok" },
     { "from": "str", "to": "bytes", "result": "warn" },
+    { "from": "str", "to": "int", "result": "warn"},
     { "from": "bytes", "to": "bytes", "result": "ok" },
     { "from": "img", "to": "img", "result": "ok" },
     { "default": true, "result": "error" }

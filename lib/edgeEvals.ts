@@ -24,7 +24,7 @@ function buildValidator(
     return (from: string, to: string): CompatibilityLevel => {
         for (const rule of allRules) {
             if ('from' in rule && 'to' in rule && rule.from === from && rule.to === to) {
-            return rule.result;
+                return rule.result;
             }
         }
 
@@ -80,5 +80,8 @@ export function resetUserRules(): void {
 }
 
 let validate: TypeValidator = buildValidator(defaultRules, userRules);
+
+
+
 
 export { validate };
