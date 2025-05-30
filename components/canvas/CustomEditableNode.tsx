@@ -63,7 +63,57 @@ function CustomEditableNode({
       ${selected ? 'border-blue-500 shadow-lg' : 'border-gray-200'}
       hover:shadow-lg hover:border-blue-300
     `}>
-      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-blue-500" isConnectable={isConnectable} />
+      {/* <Handle
+          type="source"
+          position={Position.Left}
+          style={{
+            width: 26,  // larger actual hitbox
+            height: 26,
+            //background: 'transparent',  // invisible hitbox
+            
+            right: 26,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            zIndex: 10,
+          }}
+        >
+          <div
+            style={{
+              width: 10,   // small visible target
+              height: 10,
+              background: '#555',
+              borderRadius: '50%',
+              border: '2px solid white',
+              position: 'absolute',
+              top: '50%',
+              left: '0%',
+              transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none', // ensure this doesn't block clicks
+            }}
+          />
+        </Handle>
+       */}
+      <Handle type="source" position={Position.Left} style={{
+        width: 20,  // larger actual hitbox
+        height: 20,
+        
+      }
+      }
+      className="!bg-transparent !border-none" isConnectable={isConnectable}>
+        <div
+          style={{
+            width: 10,   // small visible target
+            height: 10,
+            background: '#555',
+            borderRadius: '50%',
+            border: '2px solid white',
+            position: 'absolute',
+            top: '50%',
+            transform: 'translate(50%, -50%)',
+            pointerEvents: 'none', // ensure this doesn't block clicks
+          }}
+        />
+      </Handle>
       <div className="flex flex-col gap-2">
         <div className="font-semibold text-gray-700">Title: (ID: {id})</div>
         <input 
@@ -84,7 +134,7 @@ function CustomEditableNode({
           placeholder="Enter description"
         />
       </div>
-      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-blue-500" isConnectable={isConnectable} />
+      <Handle type="source" position={Position.Right} className=" !bg-blue-500" isConnectable={isConnectable} />
     </div>
   );
 }
