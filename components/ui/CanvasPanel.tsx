@@ -13,10 +13,12 @@ import {
 
 interface CanvasPanelProps {
   onAddNode: () => void;
+  isSheetOpen: boolean;
+  setIsSheetOpen: (isOpen: boolean) => void;
 }
 
-export default function CanvasPanel({ onAddNode }: CanvasPanelProps) {
-  const [isSheetOpen, setIsSheetOpen] = useState(true); // Open by default
+export default function CanvasPanel({ onAddNode, isSheetOpen, setIsSheetOpen }: CanvasPanelProps) {
+  
 
   return (
     <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen} modal={false}>

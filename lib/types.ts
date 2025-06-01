@@ -1,3 +1,6 @@
+import { Dispatch, SetStateAction } from "react";
+import type { Node } from '@xyflow/react';
+
 export type CompatibilityLevel = 'ok' | 'warn' | 'error';
 
 export type SerializableTypeCompatRule =
@@ -6,3 +9,31 @@ export type SerializableTypeCompatRule =
 
 export type TypeValidator = (from: string, to: string) => CompatibilityLevel;
 
+// 1. Defines the actual `data` object structure for our custom node
+export interface EditableNodeData {
+  name: string;
+  description?: string;
+  token: string; // Stores a token for the node
+  access_types: { // Defines access capabilities for sending/receiving
+    canSend?: boolean; // Make optional
+    canReceive?: boolean; // Make optional
+    // Optional: specific types of data allowed for sending
+    allowedSendTypes?: string[];
+    // Optional: specific types of data allowed for receiving
+    allowedReceiveTypes?: string[];
+  };
+  [key: string]: any; // Allow other properties, common for node data
+}
+
+// 2. Define the props our CustomEditableNode component receives.
+// We are not extending NodeProps directly to avoid potential generic type issues.
+// Instead, we list the props we expect React Flow to pass for a node component.
+export interface CustomEditableNodeComponentProps {
+  id: string; // Provided by React Flow
+  data: EditableNodeData; // This is the `data` field of the node object
+  selected: boolean; // Provided by React Flow
+  isConnectable: boolean; // Provided by React Flow
+  // Pass setNodes for direct state manipulation in MinimalCanvas
+  setNodes: Dispatch<SetStateAction<Node<EditableNodeData>[]>>;
+  // Other props from NodeProps like `dragging`, `zIndex`, `type` can be added if needed.
+}
