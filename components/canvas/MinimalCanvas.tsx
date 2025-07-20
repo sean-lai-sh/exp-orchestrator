@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useMemo, useRef } from 'react';
+import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -19,6 +19,7 @@ import {
   MiniMap,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // Import the new CanvasPanel
 import CanvasPanel from '../ui/CanvasPanel';
@@ -65,6 +66,10 @@ function FlowContent() {
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
   const [selectedNodeForPanel, setSelectedNodeForPanel] = useState<Node<EditableNodeData> | null>(null);
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true); // Controls both panels
+  const [isDeploying, setIsDeploying] = useState(false); // New state
+  const [showDeployConfirm, setShowDeployConfirm] = useState(false); // New state
+  const [deployAnimationActive, setDeployAnimationActive] = useState(false); // For progress bar/checkmark
+  const [showCheckmark, setShowCheckmark] = useState(false); // Show checkmark after progress
   const edgeReconnectSuccessful = useRef(true);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlowInstance = useReactFlow();
@@ -180,38 +185,185 @@ function FlowContent() {
     }
   }), [setNodes]);
   
+  // Deploy handler
+  const handleDeploy = useCallback(() => {
+    setIsDeploying(true);
+    setDeployAnimationActive(true);
+    setShowCheckmark(false);
+    const MIN_DURATION = 1500; // ms
+    const start = Date.now();
+    let deployFinished = false;
+    let animationFinished = false;
+
+    // When both deploy and animation are done, show checkmark
+    function maybeFinish() {
+      if (deployFinished && animationFinished) {
+        setShowCheckmark(true);
+        setTimeout(() => {
+          setDeployAnimationActive(false);
+          setIsDeploying(false);
+          setShowDeployConfirm(false);
+          setShowCheckmark(false);
+        }, 1000); // Show checkmark for 1s
+      }
+    }
+
+    // Animate progress bar using Framer Motion
+    // (No need to manage progress state, just let motion.div animate width)
+    // We'll use a key on the overlay to force remount/animate each deploy
+
+    const payload = {
+      nodes,
+      edges,
+    };
+    fetch('/deploy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        console.log('Deploy response:', data);
+        // Optionally, show a toast or alert here
+      })
+      .catch((err) => {
+        console.error('Deploy error:', err);
+      })
+      .finally(() => {
+        deployFinished = true;
+        maybeFinish();
+      });
+
+    // Animation timer for progress bar
+    setTimeout(() => {
+      animationFinished = true;
+      maybeFinish();
+    }, MIN_DURATION);
+  }, [nodes, edges]);
+
+  // Handler for Deploy button click (shows confirm modal)
+  const handleDeployClick = useCallback(() => {
+    setShowDeployConfirm(true);
+  }, []);
+
+  // Handler for confirming deploy in modal
+  const handleConfirmDeploy = useCallback(() => {
+    handleDeploy();
+  }, [handleDeploy]);
+
+  // Handler for cancelling deploy in modal
+  const handleCancelDeploy = useCallback(() => {
+    setShowDeployConfirm(false);
+  }, []);
+
   return (
     <div ref={reactFlowWrapper} style={{ width: '100vw', height: '100vh' }} className="bg-gray-200 relative">
-      <CanvasPanel 
-        onAddNode={onAddNode}
-        isSheetOpen={isLeftPanelOpen}
-        setIsSheetOpen={setIsLeftPanelOpen}
-      />
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onReconnect={onReconnect}
-        onReconnectStart={onReconnectStart}
-        onReconnectEnd={onReconnectEnd}
-        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-        onNodeClick={onNodeClick}
-        onPaneClick={onPaneClick}
-      >
-        <Controls />
-        <Background />
-        <MiniMap />
-      </ReactFlow>
-      <ComponentPanel 
-        selectedNode={selectedNodeForPanel}
-        onNodeDataChange={handleNodeDataChange}
-        isOpen={isLeftPanelOpen}
-        onClearSelection={handleComponentPanelClearSelection}
-      />
+      {/* Progress bar/checkmark overlay */}
+      <AnimatePresence>
+      {deployAnimationActive && (
+        <motion.div
+          key="deploy-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm pointer-events-auto"
+        >
+          <div className="bg-white rounded-lg shadow-lg p-8 flex flex-col items-center min-w-[320px]">
+            {!showCheckmark ? (
+              <>
+                <div className="text-lg font-semibold text-gray-700 mb-4">Deploying...</div>
+                <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden mb-2">
+                  <motion.div
+                    key="progress-bar"
+                    initial={{ width: 0 }}
+                    animate={{ width: '100%' }}
+                    transition={{ duration: 1.5, ease: 'linear' }}
+                    className="h-full bg-blue-500"
+                  />
+                </div>
+                <div className="text-xs text-gray-500">Please wait while we deploy your changes.</div>
+              </>
+            ) : (
+              <>
+                <motion.svg
+                  key="checkmark"
+                  className="h-16 w-16 text-green-500 mb-2"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                >
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
+                  <path d="M7 13l3 3 7-7" stroke="currentColor" strokeWidth="2" fill="none" />
+                </motion.svg>
+                <div className="text-lg font-semibold text-green-600">Deployed!</div>
+              </>
+            )}
+          </div>
+        </motion.div>
+      )}
+      </AnimatePresence>
+      {/* Deploy confirmation modal */}
+      {showDeployConfirm && !isDeploying && !deployAnimationActive && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg shadow-lg p-8 flex flex-col items-center">
+            <div className="text-lg font-semibold mb-4">Are you sure you want to deploy?</div>
+            <div className="flex gap-4">
+              <button
+                className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition"
+                onClick={handleConfirmDeploy}
+              >
+                Confirm
+              </button>
+              <button
+                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 transition"
+                onClick={handleCancelDeploy}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className={isDeploying || deployAnimationActive ? 'pointer-events-none blur-sm select-none' : ''} style={{ width: '100vw', height: '100vh' }}>
+        <CanvasPanel 
+          onAddNode={onAddNode}
+          isSheetOpen={isLeftPanelOpen}
+          setIsSheetOpen={setIsLeftPanelOpen}
+          onDeploy={handleDeployClick} // Show confirm modal
+          isDeploying={isDeploying || deployAnimationActive}
+        />
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onReconnect={onReconnect}
+          onReconnectStart={onReconnectStart}
+          onReconnectEnd={onReconnectEnd}
+          defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+        >
+          <Controls />
+          <Background />
+          <MiniMap />
+        </ReactFlow>
+        <ComponentPanel 
+          selectedNode={selectedNodeForPanel}
+          onNodeDataChange={handleNodeDataChange}
+          isOpen={isLeftPanelOpen}
+          onClearSelection={handleComponentPanelClearSelection}
+        />
+      </div>
     </div>
   );
 }

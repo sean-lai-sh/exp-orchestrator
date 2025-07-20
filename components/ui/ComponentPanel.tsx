@@ -101,7 +101,7 @@ export default function ComponentPanel({
     >
       <SheetContent
         side="right"
-        className="w-[300px] sm:w-[400px] no-close-button border-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none"
+        className="w-[300px] sm:w-[350px] no-close-button border-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none"
         onInteractOutside={(e) => {
           if (isOpen) {
             e.preventDefault();

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { toast} from 'sonner';
 import { validate } from '@/lib/edgeEvals';
+import Hero from '@/components/Hero';
 
 export default function Page() {
   const [fromType, setFromType] = useState('bytes');
@@ -26,7 +27,7 @@ export default function Page() {
     <div className="p-4 space-y-4">
       <h1 className="text-xl font-semibold">Type Compatibility Checker</h1>
 
-      <div className="space-x-2">
+      {/* {/* <div className="space-x-2">
         <label>
           From:
           <input
@@ -52,8 +53,8 @@ export default function Page() {
         className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
       >
         Check Eval
-      </button>
-
+      </button> */}
+      <Hero />
     </div>
   );
 }

@@ -15,11 +15,11 @@ interface CanvasPanelProps {
   onAddNode: () => void;
   isSheetOpen: boolean;
   setIsSheetOpen: (isOpen: boolean) => void;
+  onDeploy: () => void;
+  isDeploying: boolean; // New prop
 }
 
-export default function CanvasPanel({ onAddNode, isSheetOpen, setIsSheetOpen }: CanvasPanelProps) {
-  
-
+export default function CanvasPanel({ onAddNode, isSheetOpen, setIsSheetOpen, onDeploy, isDeploying }: CanvasPanelProps) {
   return (
     <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen} modal={false}>
       <SheetTrigger asChild>
@@ -54,6 +54,20 @@ export default function CanvasPanel({ onAddNode, isSheetOpen, setIsSheetOpen }: 
             }}
           >
             Add Editable Node
+          </Button>
+          <Button
+            variant={isDeploying ? "default" : "secondary"}
+            onClick={onDeploy}
+            disabled={isDeploying}
+            className={isDeploying ? "relative bg-blue-600 text-white animate-pulse" : ""}
+          >
+            {isDeploying && (
+              <svg className="animate-spin h-4 w-4 mr-2 inline-block text-white" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+            )}
+            {isDeploying ? 'Deploying...' : 'Deploy'}
           </Button>
         </div>
       </SheetContent>
