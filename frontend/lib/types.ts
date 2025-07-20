@@ -9,6 +9,8 @@ export type SerializableTypeCompatRule =
 
 export type TypeValidator = (from: string, to: string) => CompatibilityLevel;
 
+export type NodeType = 'sender' | 'receiver' | 'plugin';
+
 // 1. Defines the actual `data` object structure for our custom node
 export interface EditableNodeData {
   name: string;
@@ -22,7 +24,21 @@ export interface EditableNodeData {
     // Optional: specific types of data allowed for receiving
     allowedReceiveTypes?: string[];
   };
+  nodeType: NodeType;
+  sources?: string[];
   [key: string]: any; // Allow other properties, common for node data
+}
+
+export interface SenderNodeData extends EditableNodeData {
+  nodeType: 'sender';
+  sources: string[];
+}
+export interface ReceiverNodeData extends EditableNodeData {
+  nodeType: 'receiver';
+  sources: string[];
+}
+export interface PluginNodeData extends EditableNodeData {
+  nodeType: 'plugin';
 }
 
 // 2. Define the props our CustomEditableNode component receives.

@@ -25,30 +25,45 @@ import { motion, AnimatePresence } from 'framer-motion';
 import CanvasPanel from '../ui/CanvasPanel';
 
 // Import the custom node and its data type
-import CustomEditableNode from './CustomEditableNode';
-import type { EditableNodeData } from '../../lib/types';
+import SenderNode from '../nodes/SenderNode';
+import ReceiverNode from '../nodes/ReceiverNode';
+import PluginNode from '../nodes/PluginNode';
+import type { NodeType, EditableNodeData } from '../../lib/types';
 import { AnimatedSVGEdge } from './AnimatedSVGEdge';
 import ComponentPanel from '../ui/ComponentPanel';
 
-// Update initialNodes to use the custom type and data structure
+// Helper to generate default node data for each type
+function getDefaultNodeData(type: NodeType, id: string): EditableNodeData {
+  const base = {
+    name: `${type.charAt(0).toUpperCase() + type.slice(1)} Node ${id}`,
+    description: '',
+    token: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-${Date.now()}`,
+    access_types: {
+      allowedSendTypes: [],
+      allowedReceiveTypes: [],
+    },
+    nodeType: type,
+  };
+  if (type === 'sender') {
+    return { ...base, access_types: { ...base.access_types, canSend: true, canReceive: false } };
+  }
+  if (type === 'receiver') {
+    return { ...base, access_types: { ...base.access_types, canSend: false, canReceive: true } };
+  }
+  // plugin
+  return { ...base, access_types: { ...base.access_types, canSend: true, canReceive: true } };
+}
+
+// Update initialNodes to use the new system (default to plugin)
 const initialNodes: Node<EditableNodeData>[] = [
-  { 
-    id: '1', 
-    type: 'customEditable', // Use the new custom type
-    data: { 
-      name: 'Editable Node 1',
-      description: '',
-      token: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-initial-1`,
-      access_types: {
-        // canSend and canReceive will default to true in the component if undefined here
-        allowedSendTypes: [],
-        allowedReceiveTypes: []
-      }
-    }, 
-    position: { x: 250, y: 5 }, 
-    draggable: true, 
-    selectable: true, 
-    connectable: true 
+  {
+    id: '1',
+    type: 'plugin',
+    data: getDefaultNodeData('plugin', '1'),
+    position: { x: 250, y: 5 },
+    draggable: true,
+    selectable: true,
+    connectable: true,
   },
 ];
 
@@ -73,6 +88,13 @@ function FlowContent() {
   const edgeReconnectSuccessful = useRef(true);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlowInstance = useReactFlow();
+
+  // Register node types with setNodes injection (must be after setNodes is defined)
+  const nodeTypes = useMemo(() => ({
+    sender: (props: any) => <SenderNode {...props} setNodes={setNodes} />,
+    receiver: (props: any) => <ReceiverNode {...props} setNodes={setNodes} />,
+    plugin: (props: any) => <PluginNode {...props} setNodes={setNodes} />,
+  }), [setNodes]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => 
@@ -111,31 +133,19 @@ function FlowContent() {
     [setEdges]
   );
 
-  const onAddNode = useCallback(() => {
+  const onAddNode = useCallback((type: NodeType = 'plugin') => {
     const newNodeId = `${nextNodeId++}`;
-    let newPosition = { x: Math.random() * 200 + 50, y: Math.random() * 200 + 50 }; // Default random position
-
+    let newPosition = { x: Math.random() * 200 + 50, y: Math.random() * 200 + 50 };
     if (reactFlowWrapper.current) {
       const { width, height } = reactFlowWrapper.current.getBoundingClientRect();
       const targetX = width / 2;
       const targetY = height / 2;
       newPosition = reactFlowInstance.screenToFlowPosition({ x: targetX, y: targetY });
     }
-    console.log("Adding node at position:", newPosition);
-
     const newNode: Node<EditableNodeData> = {
       id: newNodeId,
-      type: 'customEditable',
-      data: { 
-        name: `Node ${newNodeId}`,
-        description: '',
-        token: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-${Date.now()}`,
-        access_types: {
-          // canSend and canReceive will default to true in the component if undefined here
-          allowedSendTypes: [],
-          allowedReceiveTypes: []
-        }
-      },
+      type: type,
+      data: getDefaultNodeData(type, newNodeId),
       position: newPosition,
       draggable: true,
       selectable: true,
@@ -179,12 +189,6 @@ function FlowContent() {
     setSelectedNodeForPanel(null);
   }, []);
 
-  const nodeTypes = useMemo(() => ({
-    customEditable: (props: any) => { 
-      return <CustomEditableNode {...props} setNodes={setNodes} />;
-    }
-  }), [setNodes]);
-  
   // Deploy handler
   const handleDeploy = useCallback(() => {
     setIsDeploying(true);
