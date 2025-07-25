@@ -11,6 +11,16 @@ export type TypeValidator = (from: string, to: string) => CompatibilityLevel;
 
 export type NodeType = 'sender' | 'receiver' | 'plugin';
 
+// Template definitions for pre-configured nodes
+export interface NodeTemplate {
+  id: string;
+  name: string;
+  description: string;
+  type: NodeType;
+  category: string;
+  defaultData: Partial<SenderNodeData> | Partial<ReceiverNodeData> | Partial<PluginNodeData>;
+}
+
 // 1. Defines the actual `data` object structure for our custom node
 export interface EditableNodeData {
   name: string;

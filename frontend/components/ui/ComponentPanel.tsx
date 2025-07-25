@@ -15,7 +15,7 @@ import type { Node } from '@xyflow/react';
 import type { EditableNodeData } from '@/lib/types';
 import SecureTokenDisplay from './SecureTokenDisplay';
 import { toast } from 'sonner';
-import { Info } from 'lucide-react';
+import { Info, ChevronDown, ChevronRight } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 
 function generateToken() {
@@ -44,8 +44,12 @@ export default function ComponentPanel({
   onClearSelection,
 }: ComponentPanelProps) {
   const [formData, setFormData] = useState<Partial<EditableNodeData>>({});
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  
+  // Collapsible section states
+  const [basePropsOpen, setBasePropsOpen] = useState(true);
+  const [customPropsOpen, setCustomPropsOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     if (selectedNode?.data) {

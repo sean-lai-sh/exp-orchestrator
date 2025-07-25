@@ -28,30 +28,58 @@ import CanvasPanel from '../ui/CanvasPanel';
 import SenderNode from '../nodes/SenderNode';
 import ReceiverNode from '../nodes/ReceiverNode';
 import PluginNode from '../nodes/PluginNode';
-import type { NodeType, EditableNodeData } from '../../lib/types';
+import type { NodeType, EditableNodeData, NodeTemplate, SenderNodeData, ReceiverNodeData, PluginNodeData } from '../../lib/types';
 import { AnimatedSVGEdge } from './AnimatedSVGEdge';
 import ComponentPanel from '../ui/ComponentPanel';
 
 // Helper to generate default node data for each type
-function getDefaultNodeData(type: NodeType, id: string): EditableNodeData {
+function getDefaultNodeData(type: NodeType, id: string, template?: NodeTemplate): EditableNodeData {
+  const baseToken = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-${Date.now()}`;
+  
+  if (template) {
+    // Merge template data with required fields
+    const templateData = {
+      ...template.defaultData,
+      token: baseToken,
+      name: template.defaultData.name || `${type.charAt(0).toUpperCase() + type.slice(1)} Node ${id}`
+    };
+    return templateData as EditableNodeData;
+  }
+
+  // Default fallback for non-template nodes
   const base = {
     name: `${type.charAt(0).toUpperCase() + type.slice(1)} Node ${id}`,
     description: '',
-    token: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-${Date.now()}`,
+    token: baseToken,
+    nodeType: type,
     access_types: {
       allowedSendTypes: [],
       allowedReceiveTypes: [],
     },
-    nodeType: type,
   };
+
   if (type === 'sender') {
-    return { ...base, access_types: { ...base.access_types, canSend: true, canReceive: false } };
+    return { 
+      ...base, 
+      nodeType: 'sender' as const,
+      sources: [],
+      access_types: { ...base.access_types, canSend: true, canReceive: false } 
+    } as SenderNodeData;
   }
   if (type === 'receiver') {
-    return { ...base, access_types: { ...base.access_types, canSend: false, canReceive: true } };
+    return { 
+      ...base, 
+      nodeType: 'receiver' as const,
+      sources: [],
+      access_types: { ...base.access_types, canSend: false, canReceive: true } 
+    } as ReceiverNodeData;
   }
   // plugin
-  return { ...base, access_types: { ...base.access_types, canSend: true, canReceive: true } };
+  return { 
+    ...base, 
+    nodeType: 'plugin' as const,
+    access_types: { ...base.access_types, canSend: true, canReceive: true } 
+  } as PluginNodeData;
 }
 
 // Update initialNodes to use the new system (default to plugin)
@@ -133,7 +161,7 @@ function FlowContent() {
     [setEdges]
   );
 
-  const onAddNode = useCallback((type: NodeType = 'plugin') => {
+  const onAddNode = useCallback((type: NodeType = 'plugin', template?: NodeTemplate) => {
     const newNodeId = `${nextNodeId++}`;
     let newPosition = { x: Math.random() * 200 + 50, y: Math.random() * 200 + 50 };
     if (reactFlowWrapper.current) {
@@ -145,7 +173,7 @@ function FlowContent() {
     const newNode: Node<EditableNodeData> = {
       id: newNodeId,
       type: type,
-      data: getDefaultNodeData(type, newNodeId),
+      data: getDefaultNodeData(type, newNodeId, template),
       position: newPosition,
       draggable: true,
       selectable: true,
