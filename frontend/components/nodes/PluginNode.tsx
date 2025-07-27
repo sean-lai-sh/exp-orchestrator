@@ -2,6 +2,7 @@ import BaseNode, { BaseNodeProps } from './BaseNode';
 import { Handle, Position } from '@xyflow/react';
 import { ChangeEvent } from 'react';
 import { Puzzle } from 'lucide-react';
+import { getSourceColor } from '../../lib/sourceColors';
 
 const PluginNode = (props: BaseNodeProps) => {
   const { id, data, setNodes, isConnectable } = props;
@@ -65,7 +66,14 @@ const PluginNode = (props: BaseNodeProps) => {
           type="target" 
           position={Position.Left} 
           isConnectable={isConnectable}
-          style={{ background: '#8b5cf6' }}
+          style={{ 
+            background: '#8b5cf6',
+            border: '2px solid #7c3aed',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+            left: '-8px',
+            top: '50%',
+            transform: 'translateY(-50%)'
+          }}
         />
       )}
       
@@ -80,7 +88,11 @@ const PluginNode = (props: BaseNodeProps) => {
               id={source}
               isConnectable={isConnectable}
               style={{ 
-                background: '#8b5cf6',
+                background: getSourceColor(index),
+                border: `2px solid ${getSourceColor(index)}`,
+                filter: 'brightness(1.1)',
+                boxShadow: `0 2px 6px ${getSourceColor(index)}40`,
+                right: '-8px',
                 top: `${25 + (index * 12)}%`,
                 transform: 'translateY(-50%)'
               }}
@@ -91,7 +103,14 @@ const PluginNode = (props: BaseNodeProps) => {
             type="source" 
             position={Position.Right} 
             isConnectable={isConnectable}
-            style={{ background: '#8b5cf6' }}
+            style={{ 
+              background: '#8b5cf6',
+              border: '2px solid #7c3aed',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              right: '-8px',
+              top: '50%',
+              transform: 'translateY(-50%)'
+            }}
           />
         )
       )}

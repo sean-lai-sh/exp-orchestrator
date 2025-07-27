@@ -1,6 +1,7 @@
 import BaseNode, { BaseNodeProps } from './BaseNode';
 import { Handle, Position } from '@xyflow/react';
 import { Inbox } from 'lucide-react';
+import { getSourceColor } from '../../lib/sourceColors';
 
 const ReceiverNode = (props: BaseNodeProps) => {
   const { data } = props;
@@ -31,7 +32,14 @@ const ReceiverNode = (props: BaseNodeProps) => {
         type="target" 
         position={Position.Left} 
         isConnectable={props.isConnectable}
-        style={{ background: '#10b981' }}
+        style={{ 
+          background: '#10b981', 
+          border: '2px solid #059669',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+          left: '-8px',
+          top: '50%',
+          transform: 'translateY(-50%)'
+        }}
       />
       
       {/* Output handles - only if can send and has sources */}
@@ -44,7 +52,11 @@ const ReceiverNode = (props: BaseNodeProps) => {
             id={source}
             isConnectable={props.isConnectable}
             style={{ 
-              background: '#10b981',
+              background: getSourceColor(index),
+              border: `2px solid ${getSourceColor(index)}`,
+              filter: 'brightness(1.1)',
+              boxShadow: `0 2px 6px ${getSourceColor(index)}40`,
+              right: '-8px',
               top: `${25 + (index * 15)}%`,
               transform: 'translateY(-50%)'
             }}
