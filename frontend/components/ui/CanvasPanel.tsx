@@ -98,28 +98,7 @@ export default function CanvasPanel({ onAddNode, isSheetOpen, setIsSheetOpen, on
       </DropdownMenu>
     );
   };
-          {templates.map((template) => (
-            <DropdownMenuItem
-              key={template.id}
-              onClick={() => handleTemplateSelect(template)}
-              className="flex flex-col items-start gap-1 p-3 cursor-pointer"
-            >
-              <div className="flex items-center gap-2 w-full">
-                {icon}
-                <span className="font-medium text-sm">{template.name}</span>
-              </div>
-              <p className="text-xs text-gray-500 leading-tight">{template.description}</p>
-            </DropdownMenuItem>
-          ))}
-          {templates.length === 0 && (
-            <DropdownMenuItem disabled className="text-xs text-gray-400">
-              No templates available
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  };
+          
 
   return (
     <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen} modal={false}>
