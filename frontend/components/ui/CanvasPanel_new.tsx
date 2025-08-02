@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { NodeType, NodeTemplate } from '../../lib/types';
 import { nodeTemplates, templatesByType } from '../../lib/nodeTemplates';
-import { Send, Inbox, Puzzle, ChevronDown, Plus, Search, Sparkles } from 'lucide-react';
+import { Send, Inbox, Puzzle, ChevronDown, Plus, Search } from 'lucide-react';
 
 const nodeTypesPalette = [
   { type: 'sender', label: 'Sender', color: 'bg-blue-100', shape: 'rounded-lg', text: 'text-blue-700', icon: <Send className="inline-block mr-1 h-4 w-4 text-blue-600" /> },
@@ -36,11 +36,9 @@ interface CanvasPanelProps {
   setIsSheetOpen: (isOpen: boolean) => void;
   onDeploy: () => void;
   isDeploying: boolean;
-  onCleanWorkflow: () => void;
-  isCleaning: boolean;
 }
 
-export default function CanvasPanel({ onAddNode, isSheetOpen, setIsSheetOpen, onDeploy, isDeploying, onCleanWorkflow, isCleaning }: CanvasPanelProps) {
+export default function CanvasPanel({ onAddNode, isSheetOpen, setIsSheetOpen, onDeploy, isDeploying }: CanvasPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleTemplateSelect = (template: NodeTemplate) => {
@@ -236,22 +234,6 @@ export default function CanvasPanel({ onAddNode, isSheetOpen, setIsSheetOpen, on
               </svg>
             )}
             {isDeploying ? 'Deploying...' : 'Deploy'}
-          </Button>
-          
-          <Button
-            variant={isCleaning ? "default" : "outline"}
-            onClick={onCleanWorkflow}
-            disabled={isCleaning || isDeploying}
-            className={isCleaning ? "relative bg-purple-600 text-white animate-pulse mt-2" : "mt-2"}
-          >
-            {isCleaning && (
-              <svg className="animate-spin h-4 w-4 mr-2 inline-block text-white" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-              </svg>
-            )}
-            {!isCleaning && <Sparkles className="h-4 w-4 mr-2" />}
-            {isCleaning ? 'Cleaning...' : 'Clean Workflow'}
           </Button>
         </div>
       </SheetContent>

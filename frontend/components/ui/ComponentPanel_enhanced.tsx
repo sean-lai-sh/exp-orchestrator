@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, ChangeEvent, useCallback } from 'react';
+import { useState, useEffect, ChangeEvent } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,7 +17,6 @@ import type { EditableNodeData } from '@/lib/types';
 import SecureTokenDisplay from './SecureTokenDisplay';
 import { toast } from 'sonner';
 import { Info, ChevronDown, ChevronRight, Settings, User, Wrench } from 'lucide-react';
-import { getSourceColors } from '@/lib/sourceColors';
 
 function generateToken() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -46,86 +45,51 @@ export default function ComponentPanel({
 }: ComponentPanelProps) {
   const [formData, setFormData] = useState<Partial<EditableNodeData>>({});
   const [showConfirm, setShowConfirm] = useState(false);
-  const [advancedChanges, setAdvancedChanges] = useState<Partial<EditableNodeData>>({});
   
   // Collapsible section states
   const [basePropsOpen, setBasePropsOpen] = useState(true);
   const [customPropsOpen, setCustomPropsOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  // Auto-apply non-advanced changes
-  const autoApplyChanges = useCallback((newData: Partial<EditableNodeData>) => {
-    if (selectedNode && onNodeDataChange) {
-      onNodeDataChange(selectedNode.id, newData);
-    }
-  }, [selectedNode, onNodeDataChange]);
-
   useEffect(() => {
     if (selectedNode?.data) {
       setFormData({ ...selectedNode.data });
-      setAdvancedChanges({});
     } else {
       setFormData({});
-      setAdvancedChanges({});
     }
   }, [selectedNode]);
 
-  const handleInputChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, isAdvanced = false) => {
+  const handleInputChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = event.target;
-    const newData = { [name]: value };
-    
-    setFormData((prev) => ({ ...prev, ...newData }));
-    
-    if (isAdvanced) {
-      setAdvancedChanges(prev => ({ ...prev, ...newData }));
-    } else {
-      // Auto-apply non-advanced changes
-      autoApplyChanges(newData);
-    }
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Editable sources list for all node types
+  // Editable sources list for sender/receiver
   const handleSourceChange = (idx: number, value: string) => {
-    const newSources = (formData.sources || []).map((src: string, i: number) => (i === idx ? value : src));
-    const newData = { sources: newSources };
-    
-    setFormData((prev) => ({ ...prev, ...newData }));
-    autoApplyChanges(newData);
+    setFormData((prev) => ({
+      ...prev,
+      sources: (prev.sources || []).map((src: string, i: number) => (i === idx ? value : src)),
+    }));
   };
   
   const handleAddSource = () => {
-    const newSources = [...(formData.sources || []), ''];
-    const newData = { sources: newSources };
-    
-    setFormData((prev) => ({ ...prev, ...newData }));
-    autoApplyChanges(newData);
+    setFormData((prev) => ({
+      ...prev,
+      sources: [...(prev.sources || []), ''],
+    }));
   };
   
   const handleRemoveSource = (idx: number) => {
-    const newSources = (formData.sources || []).filter((_: string, i: number) => i !== idx);
-    const newData = { sources: newSources };
-    
-    setFormData((prev) => ({ ...prev, ...newData }));
-    autoApplyChanges(newData);
-  };
-
-  const handleAccessTypeChange = (field: string, value: any) => {
-    const newData = {
-      access_types: {
-        ...formData.access_types,
-        [field]: value,
-      },
-    };
-    
-    setFormData((prev) => ({ ...prev, ...newData }));
-    autoApplyChanges(newData);
+    setFormData((prev) => ({
+      ...prev,
+      sources: (prev.sources || []).filter((_: string, i: number) => i !== idx),
+    }));
   };
 
   const handleSubmit = () => {
-    if (selectedNode && onNodeDataChange && Object.keys(advancedChanges).length > 0) {
-      onNodeDataChange(selectedNode.id, advancedChanges);
-      setAdvancedChanges({});
-      toast.success('Advanced settings applied!');
+    if (selectedNode && onNodeDataChange && formData) {
+      onNodeDataChange(selectedNode.id, formData);
+      toast.success('Node updated successfully!');
     }
   };
 
@@ -134,9 +98,7 @@ export default function ComponentPanel({
   };
   
   const confirmRegenerateToken = () => {
-    const newToken = generateToken();
-    setFormData(prev => ({ ...prev, token: newToken }));
-    setAdvancedChanges(prev => ({ ...prev, token: newToken }));
+    setFormData(prev => ({ ...prev, token: generateToken() }));
     setShowConfirm(false);
     toast.success('Token regenerated!');
   };
@@ -178,7 +140,7 @@ export default function ComponentPanel({
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <User className="h-4 w-4" />
-            Edit Node (ID: {selectedNode?.id})
+            Edit Node
           </SheetTitle>
           <SheetDescription>
             Modify the properties of your {nodeType} node.
@@ -220,23 +182,18 @@ export default function ComponentPanel({
                 />
               </div>
 
-              {/* Sources for sender/receiver/plugin nodes */}
-              {(nodeType === 'sender' || nodeType === 'receiver' || nodeType === 'plugin') && (
+              {/* Sources for sender/receiver nodes */}
+              {(nodeType === 'sender' || nodeType === 'receiver') && (
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1 block">
                     Sources ({(formData.sources || []).length})
                   </label>
                   <div className="space-y-2">
-                    {getSourceColors(formData.sources || []).map(({ source, color }, idx) => (
+                    {(formData.sources || []).map((src: string, idx: number) => (
                       <div key={idx} className="flex gap-2 items-center">
-                        <div 
-                          className="w-4 h-4 rounded-full border-2 border-white shadow-sm flex-shrink-0"
-                          style={{ backgroundColor: color }}
-                          title={`Connection point color for ${source || `Source ${idx + 1}`}`}
-                        />
                         <Input
                           type="text"
-                          value={source}
+                          value={src}
                           onChange={e => handleSourceChange(idx, e.target.value)}
                           placeholder={`Source ${idx + 1}`}
                           className="flex-1"
@@ -274,7 +231,13 @@ export default function ComponentPanel({
                       type="checkbox"
                       id={`canSend-${selectedNode.id}`}
                       checked={formData.access_types?.canSend !== false}
-                      onChange={e => handleAccessTypeChange('canSend', e.target.checked)}
+                      onChange={e => setFormData(prev => ({
+                        ...prev,
+                        access_types: {
+                          ...prev.access_types,
+                          canSend: e.target.checked,
+                        },
+                      }))}
                       className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
                     <label htmlFor={`canSend-${selectedNode.id}`} className="text-sm text-gray-700">Can Send</label>
@@ -284,7 +247,13 @@ export default function ComponentPanel({
                       type="checkbox"
                       id={`canReceive-${selectedNode.id}`}
                       checked={formData.access_types?.canReceive !== false}
-                      onChange={e => handleAccessTypeChange('canReceive', e.target.checked)}
+                      onChange={e => setFormData(prev => ({
+                        ...prev,
+                        access_types: {
+                          ...prev.access_types,
+                          canReceive: e.target.checked,
+                        },
+                      }))}
                       className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
                     <label htmlFor={`canReceive-${selectedNode.id}`} className="text-sm text-gray-700">Can Receive</label>
@@ -299,7 +268,13 @@ export default function ComponentPanel({
                   <Input
                     type="text"
                     value={(formData.access_types?.allowedSendTypes || []).join(', ')}
-                    onChange={e => handleAccessTypeChange('allowedSendTypes', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                    onChange={e => setFormData(prev => ({
+                      ...prev,
+                      access_types: {
+                        ...prev.access_types,
+                        allowedSendTypes: e.target.value.split(',').map(s => s.trim()).filter(Boolean),
+                      },
+                    }))}
                     placeholder="e.g., text, json, binary"
                   />
                 </div>
@@ -308,7 +283,13 @@ export default function ComponentPanel({
                   <Input
                     type="text"
                     value={(formData.access_types?.allowedReceiveTypes || []).join(', ')}
-                    onChange={e => handleAccessTypeChange('allowedReceiveTypes', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                    onChange={e => setFormData(prev => ({
+                      ...prev,
+                      access_types: {
+                        ...prev.access_types,
+                        allowedReceiveTypes: e.target.value.split(',').map(s => s.trim()).filter(Boolean),
+                      },
+                    }))}
                     placeholder="e.g., text, json, binary"
                   />
                 </div>
@@ -418,21 +399,14 @@ export default function ComponentPanel({
             </CollapsibleContent>
           </Collapsible>
 
-          {/* Apply Button - Only show if there are advanced changes */}
-          {Object.keys(advancedChanges).length > 0 && (
-            <Button
-              onClick={handleSubmit}
-              className="w-full mt-4"
-              size="lg"
-            >
-              Apply Advanced Changes ({Object.keys(advancedChanges).length})
-            </Button>
-          )}
-          
-          {/* Info about auto-save */}
-          <div className="text-xs text-gray-500 text-center mt-2">
-            Changes to basic properties are applied automatically
-          </div>
+          {/* Apply Button */}
+          <Button
+            onClick={handleSubmit}
+            className="w-full mt-4"
+            size="lg"
+          >
+            Apply Changes
+          </Button>
         </div>
       </SheetContent>
     </Sheet>

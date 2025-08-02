@@ -20,38 +20,73 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Trash2, Copy, Plus } from 'lucide-react';
 
 // Import the new CanvasPanel
 import CanvasPanel from '../ui/CanvasPanel';
+
+// Import context menu components
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '../ui/context-menu';
 
 // Import the custom node and its data type
 import SenderNode from '../nodes/SenderNode';
 import ReceiverNode from '../nodes/ReceiverNode';
 import PluginNode from '../nodes/PluginNode';
-import type { NodeType, EditableNodeData } from '../../lib/types';
+import type { NodeType, EditableNodeData, NodeTemplate, SenderNodeData, ReceiverNodeData, PluginNodeData } from '../../lib/types';
 import { AnimatedSVGEdge } from './AnimatedSVGEdge';
 import ComponentPanel from '../ui/ComponentPanel';
 
 // Helper to generate default node data for each type
-function getDefaultNodeData(type: NodeType, id: string): EditableNodeData {
+function getDefaultNodeData(type: NodeType, id: string, template?: NodeTemplate): EditableNodeData {
+  const baseToken = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-${Date.now()}`;
+  if (template) {
+    // Merge template data with required fields
+    const templateData = {
+      ...template.defaultData,
+      token: baseToken,
+      name: template.defaultData.name || `${type.charAt(0).toUpperCase() + type.slice(1)} Node`
+    };
+    return templateData as EditableNodeData;
+  }
+  // Default fallback for non-template nodes
   const base = {
-    name: `${type.charAt(0).toUpperCase() + type.slice(1)} Node ${id}`,
+    name: `${type.charAt(0).toUpperCase() + type.slice(1)} Node`,
     description: '',
-    token: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-${Date.now()}`,
+    token: baseToken,
+    nodeType: type,
     access_types: {
       allowedSendTypes: [],
       allowedReceiveTypes: [],
     },
-    nodeType: type,
   };
   if (type === 'sender') {
-    return { ...base, access_types: { ...base.access_types, canSend: true, canReceive: false } };
+    return { 
+      ...base, 
+      nodeType: 'sender' as const,
+      sources: [],
+      access_types: { ...base.access_types, canSend: true, canReceive: false } 
+    } as SenderNodeData;
   }
   if (type === 'receiver') {
-    return { ...base, access_types: { ...base.access_types, canSend: false, canReceive: true } };
+    return { 
+      ...base, 
+      nodeType: 'receiver' as const,
+      sources: [],
+      access_types: { ...base.access_types, canSend: false, canReceive: true } 
+    } as ReceiverNodeData;
   }
   // plugin
-  return { ...base, access_types: { ...base.access_types, canSend: true, canReceive: true } };
+  return { 
+    ...base, 
+    nodeType: 'plugin' as const,
+    access_types: { ...base.access_types, canSend: true, canReceive: true } 
+  } as PluginNodeData;
 }
 
 // Update initialNodes to use the new system (default to plugin)
@@ -80,11 +115,14 @@ function FlowContent() {
   const [nodes, setNodes] = useState<Node<EditableNodeData>[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
   const [selectedNodeForPanel, setSelectedNodeForPanel] = useState<Node<EditableNodeData> | null>(null);
+  const [contextMenuNode, setContextMenuNode] = useState<Node<EditableNodeData> | null>(null);
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true); // Controls both panels
   const [isDeploying, setIsDeploying] = useState(false); // New state
   const [showDeployConfirm, setShowDeployConfirm] = useState(false); // New state
   const [deployAnimationActive, setDeployAnimationActive] = useState(false); // For progress bar/checkmark
   const [showCheckmark, setShowCheckmark] = useState(false); // Show checkmark after progress
+  const [isCleaning, setIsCleaning] = useState(false); // New state for cleaning
+  const [showCleanConfirm, setShowCleanConfirm] = useState(false); // New state for clean confirm
   const edgeReconnectSuccessful = useRef(true);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlowInstance = useReactFlow();
@@ -106,9 +144,34 @@ function FlowContent() {
     [setEdges]
   );
   const onConnect = useCallback(
-    (connection: Connection) => 
-      setEdges((eds) => addEdge({ ...connection, type: 'animated', animated: true, reconnectable: true }, eds)),
-    [setEdges]
+    (connection: Connection) => {
+      // Get the source handle ID and derive color from source handle
+      const sourceHandleId = connection.sourceHandle || 'default';
+      
+      // Find the source node to get its sources array for color consistency
+      const sourceNode = nodes.find(node => node.id === connection.source);
+      let edgeColor = '#3b82f6'; // default blue
+      
+      if (sourceNode && sourceNode.data.sources && sourceHandleId !== 'default') {
+        // Find the index of this source to match handle color
+        const sourceIndex = sourceNode.data.sources.findIndex((src: string) => src === sourceHandleId);
+        if (sourceIndex !== -1) {
+          // Use the same color scheme as handles
+          const sourceColors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#ec4899', '#6366f1', '#14b8a6'];
+          edgeColor = sourceColors[sourceIndex % sourceColors.length];
+        }
+      }
+      
+      setEdges((eds) => addEdge({ 
+        ...connection, 
+        type: 'animated', 
+        animated: true, 
+        reconnectable: true,
+        style: { stroke: edgeColor, strokeWidth: 2 },
+        data: { color: edgeColor, sourceHandle: sourceHandleId }
+      }, eds));
+    },
+    [setEdges, nodes]
   );
 
   const onReconnectStart = useCallback(() => {
@@ -133,8 +196,15 @@ function FlowContent() {
     [setEdges]
   );
 
-  const onAddNode = useCallback((type: NodeType = 'plugin') => {
-    const newNodeId = `${nextNodeId++}`;
+  const onAddNode = useCallback((type: NodeType = 'plugin', template?: NodeTemplate) => {
+    // Use a random hash/UUID for node ID
+    let newNodeId: string;
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      newNodeId = crypto.randomUUID();
+    } else {
+      // Fallback: random base36 string
+      newNodeId = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+    }
     let newPosition = { x: Math.random() * 200 + 50, y: Math.random() * 200 + 50 };
     if (reactFlowWrapper.current) {
       const { width, height } = reactFlowWrapper.current.getBoundingClientRect();
@@ -145,7 +215,7 @@ function FlowContent() {
     const newNode: Node<EditableNodeData> = {
       id: newNodeId,
       type: type,
-      data: getDefaultNodeData(type, newNodeId),
+      data: getDefaultNodeData(type, newNodeId, template),
       position: newPosition,
       draggable: true,
       selectable: true,
@@ -156,6 +226,7 @@ function FlowContent() {
 
   const onPaneClick = useCallback(() => {
     setSelectedNodeForPanel(null);
+    setContextMenuNode(null);
     // Optionally, you might want to close the panel as well if no node is selected
     // if (!isLeftPanelOpen) setIsLeftPanelOpen(false); // Example, if you want panel to close
   }, [setSelectedNodeForPanel]);
@@ -164,6 +235,161 @@ function FlowContent() {
     console.log("onNodeClick triggered. Node:", node);
     setSelectedNodeForPanel(node);
     // Panel opens if isLeftPanelOpen is true, showing the selected node
+  }, []);
+
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node<EditableNodeData>) => {
+    event.preventDefault();
+    setContextMenuNode(node);
+  }, []);
+
+  const handleDeleteNode = useCallback((nodeId: string) => {
+    setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+    setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+    
+    // Clear selection if the deleted node was selected
+    if (selectedNodeForPanel?.id === nodeId) {
+      setSelectedNodeForPanel(null);
+    }
+    if (contextMenuNode?.id === nodeId) {
+      setContextMenuNode(null);
+    }
+  }, [selectedNodeForPanel, contextMenuNode]);
+
+  const handleDuplicateNode = useCallback((nodeId: string) => {
+    const nodeToDuplicate = nodes.find(node => node.id === nodeId);
+    if (!nodeToDuplicate) return;
+
+    const newNodeId = `${nextNodeId++}`;
+    const newNode: Node<EditableNodeData> = {
+      ...nodeToDuplicate,
+      id: newNodeId,
+      position: {
+        x: nodeToDuplicate.position.x + 50,
+        y: nodeToDuplicate.position.y + 50,
+      },
+      data: {
+        ...nodeToDuplicate.data,
+        name: `${nodeToDuplicate.data.name} (Copy)`,
+        token: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-${Date.now()}`,
+      }
+    };
+    setNodes((nds) => nds.concat(newNode));
+    setContextMenuNode(null);
+  }, [nodes]);
+
+  // Remove keyboard delete support since we're only using right-click now
+
+  const handleCleanWorkflow = useCallback(() => {
+    setIsCleaning(true);
+    setShowCheckmark(false);
+    
+    setTimeout(() => {
+      const HORIZONTAL_SPACING = 400;
+      const VERTICAL_SPACING = 200;
+      const START_X = 150;
+      const START_Y = 150;
+
+      // Build connection maps
+      const nodeMap = new Map(nodes.map(n => [n.id, n]));
+      const outgoingMap = new Map<string, Edge[]>();
+      const incomingMap = new Map<string, Edge[]>();
+      
+      edges.forEach(edge => {
+        if (!outgoingMap.has(edge.source)) outgoingMap.set(edge.source, []);
+        if (!incomingMap.has(edge.target)) incomingMap.set(edge.target, []);
+        outgoingMap.get(edge.source)!.push(edge);
+        incomingMap.get(edge.target)!.push(edge);
+      });
+
+      // Calculate depth levels for visual hierarchy
+      function calculateDepth(nodeId: string, visited = new Set<string>()): number {
+        if (visited.has(nodeId)) return 0; // cycle protection
+        visited.add(nodeId);
+        
+        const incoming = incomingMap.get(nodeId) || [];
+        if (incoming.length === 0) return 0; // root node
+        
+        return 1 + Math.max(...incoming.map(edge => calculateDepth(edge.source, new Set(visited))));
+      }
+
+      // Group nodes by depth level and type preference
+      const nodesByDepth = new Map<number, { senders: Node<EditableNodeData>[], plugins: Node<EditableNodeData>[], receivers: Node<EditableNodeData>[] }>();
+      
+      nodes.forEach(node => {
+        const depth = calculateDepth(node.id);
+        if (!nodesByDepth.has(depth)) {
+          nodesByDepth.set(depth, { senders: [], plugins: [], receivers: [] });
+        }
+        
+        const level = nodesByDepth.get(depth)!;
+        if (node.type === 'sender') level.senders.push(node);
+        else if (node.type === 'plugin') level.plugins.push(node);
+        else if (node.type === 'receiver') level.receivers.push(node);
+      });
+
+      // Position nodes with visual hierarchy rules:
+      // 1. Senders typically at depth 0 (leftmost)
+      // 2. Plugins in middle depths
+      // 3. Receivers typically at higher depths (rightmost)
+      const nodePositions: Record<string, {x: number, y: number}> = {};
+      const sortedDepths = Array.from(nodesByDepth.keys()).sort((a, b) => a - b);
+      
+      sortedDepths.forEach((depth, depthIdx) => {
+        const level = nodesByDepth.get(depth)!;
+        const xOffset = START_X + (depthIdx * HORIZONTAL_SPACING);
+        let yOffset = START_Y;
+        
+        // Within each depth level, order by type: senders, plugins, receivers
+        const orderedNodes = [...level.senders, ...level.plugins, ...level.receivers];
+        
+        orderedNodes.forEach((node, nodeIdx) => {
+          nodePositions[node.id] = {
+            x: xOffset,
+            y: yOffset + (nodeIdx * VERTICAL_SPACING)
+          };
+        });
+      });
+
+      // Handle edge case: nodes with no connections (completely isolated)
+      const connectedNodeIds = new Set([
+        ...edges.map(e => e.source),
+        ...edges.map(e => e.target)
+      ]);
+      
+      const isolatedNodes = nodes.filter(n => !connectedNodeIds.has(n.id));
+      if (isolatedNodes.length > 0) {
+        const isolatedStartX = START_X + ((sortedDepths.length + 2) * HORIZONTAL_SPACING);
+        isolatedNodes.forEach((node, idx) => {
+          nodePositions[node.id] = {
+            x: isolatedStartX + (node.type === 'sender' ? 0 : node.type === 'plugin' ? HORIZONTAL_SPACING : HORIZONTAL_SPACING * 2),
+            y: START_Y + (idx * VERTICAL_SPACING)
+          };
+        });
+      }
+
+      const cleanedNodes = nodes.map(node => ({
+        ...node,
+        position: nodePositions[node.id] || node.position
+      }));
+      
+      setNodes(cleanedNodes);
+      setIsCleaning(false);
+      setShowCheckmark(true);
+      setTimeout(() => setShowCheckmark(false), 2000);
+    }, 2000);
+  }, [nodes, edges, setNodes]);
+
+  const handleCleanClick = useCallback(() => {
+    setShowCleanConfirm(true);
+  }, []);
+
+  const handleConfirmClean = useCallback(() => {
+    setShowCleanConfirm(false);
+    handleCleanWorkflow();
+  }, [handleCleanWorkflow]);
+
+  const handleCancelClean = useCallback(() => {
+    setShowCleanConfirm(false);
   }, []);
 
   const handleNodeDataChange = useCallback((nodeId: string, newData: Partial<EditableNodeData>) => {
@@ -334,37 +560,122 @@ function FlowContent() {
           </div>
         </div>
       )}
-      <div className={isDeploying || deployAnimationActive ? 'pointer-events-none blur-sm select-none' : ''} style={{ width: '100vw', height: '100vh' }}>
+      
+      {/* Clean workflow confirmation modal */}
+      {showCleanConfirm && !isCleaning && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg shadow-lg p-8 flex flex-col items-center">
+            <div className="text-lg font-semibold mb-2">Clean & Organize Workflow</div>
+            <div className="text-sm text-gray-600 mb-4 text-center">
+              This will organize your workflow into clean horizontal chains<br />
+              based on data flow connections and logical groupings.
+            </div>
+            <div className="flex gap-4">
+              <button
+                className="px-4 py-2 rounded bg-purple-600 text-white hover:bg-purple-700 transition"
+                onClick={handleConfirmClean}
+              >
+                Clean Workflow
+              </button>
+              <button
+                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 transition"
+                onClick={handleCancelClean}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      <div className={isDeploying || deployAnimationActive || isCleaning ? 'pointer-events-none blur-sm select-none' : ''} style={{ width: '100vw', height: '100vh' }}>
         <CanvasPanel 
           onAddNode={onAddNode}
           isSheetOpen={isLeftPanelOpen}
           setIsSheetOpen={setIsLeftPanelOpen}
           onDeploy={handleDeployClick} // Show confirm modal
           isDeploying={isDeploying || deployAnimationActive}
+          onCleanWorkflow={handleCleanClick}
+          isCleaning={isCleaning}
         />
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onReconnect={onReconnect}
-          onReconnectStart={onReconnectStart}
-          onReconnectEnd={onReconnectEnd}
-          defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-          onNodeClick={onNodeClick}
-          onPaneClick={onPaneClick}
-        >
-          <Controls />
-          <Background />
-          <MiniMap />
-        </ReactFlow>
+        <ContextMenu onOpenChange={(open) => !open && setContextMenuNode(null)}>
+          <ContextMenuTrigger asChild>
+            <div style={{ width: '100%', height: '100%' }}>
+              <ReactFlow
+                nodes={nodes.map(node => ({
+                  ...node,
+                  style: {
+                    ...node.style,
+                    outline: contextMenuNode?.id === node.id ? '2px solid #ef4444' : 'none',
+                    boxShadow: contextMenuNode?.id === node.id ? '0 0 0 2px rgba(239, 68, 68, 0.2)' : 'none'
+                  }
+                }))}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
+                onReconnect={onReconnect}
+                onReconnectStart={onReconnectStart}
+                onReconnectEnd={onReconnectEnd}
+                defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+                onNodeClick={onNodeClick}
+                onNodeContextMenu={onNodeContextMenu}
+                onPaneClick={onPaneClick}
+              >
+                <Controls />
+                <Background />
+                <MiniMap />
+              </ReactFlow>
+            </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            {contextMenuNode ? (
+              <>
+                <ContextMenuItem
+                  onClick={() => handleDuplicateNode(contextMenuNode.id)}
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  Duplicate Node
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                  onClick={() => handleDeleteNode(contextMenuNode.id)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Node
+                </ContextMenuItem>
+              </>
+            ) : (
+              <>
+                <ContextMenuItem
+                  onClick={() => onAddNode('sender')}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Sender Node
+                </ContextMenuItem>
+                <ContextMenuItem
+                  onClick={() => onAddNode('receiver')}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Receiver Node
+                </ContextMenuItem>
+                <ContextMenuItem
+                  onClick={() => onAddNode('plugin')}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Plugin Node
+                </ContextMenuItem>
+              </>
+            )}
+          </ContextMenuContent>
+        </ContextMenu>
         <ComponentPanel 
           selectedNode={selectedNodeForPanel}
           onNodeDataChange={handleNodeDataChange}
-          isOpen={isLeftPanelOpen}
+          isOpen={!!selectedNodeForPanel}
           onClearSelection={handleComponentPanelClearSelection}
         />
       </div>
