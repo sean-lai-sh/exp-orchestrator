@@ -15,9 +15,9 @@ export const nodeTemplates: NodeTemplate[] = [
       sources: ['generic_output'],
       access_types: {
         canSend: true,
-        canReceive: true, // Can receive configuration/control signals
+        canReceive: false, // Senders primarily send, don't receive by default
         allowedSendTypes: ['generic', 'text', 'binary', 'json', 'xml'],
-        allowedReceiveTypes: ['generic', 'control', 'config']
+        allowedReceiveTypes: []
       }
     } as Partial<SenderNodeData>
   },
@@ -34,9 +34,9 @@ export const nodeTemplates: NodeTemplate[] = [
       sources: ['file_output', 'metadata_output'],
       access_types: {
         canSend: true,
-        canReceive: true, // Can receive file paths or control signals
+        canReceive: false, // Senders primarily send
         allowedSendTypes: ['binary', 'file', 'metadata'],
-        allowedReceiveTypes: ['text', 'control', 'file_path']
+        allowedReceiveTypes: []
       }
     } as Partial<SenderNodeData>
   },
@@ -53,9 +53,9 @@ export const nodeTemplates: NodeTemplate[] = [
       sources: ['api_response', 'status_output', 'headers_output'],
       access_types: {
         canSend: true,
-        canReceive: true, // Can receive API endpoints, parameters
+        canReceive: false, // Senders primarily send
         allowedSendTypes: ['json', 'xml', 'text', 'status'],
-        allowedReceiveTypes: ['json', 'text', 'url', 'config']
+        allowedReceiveTypes: []
       }
     } as Partial<SenderNodeData>
   },
@@ -71,11 +71,11 @@ export const nodeTemplates: NodeTemplate[] = [
       name: 'Generic Receiver',
       description: 'A versatile receiver node for any data type',
       nodeType: 'receiver' as const,
-      sources: ['processed_output'], // Receivers can also output processed data
+      sources: [], // Receivers primarily receive, don't send by default
       access_types: {
-        canSend: true, // Can send acknowledgments or processed data
+        canSend: false, // Receivers primarily receive
         canReceive: true,
-        allowedSendTypes: ['generic', 'acknowledgment', 'status'],
+        allowedSendTypes: [],
         allowedReceiveTypes: ['generic', 'text', 'binary', 'json', 'xml']
       }
     } as Partial<ReceiverNodeData>
@@ -90,11 +90,11 @@ export const nodeTemplates: NodeTemplate[] = [
       name: 'Database Receiver',
       description: 'Receives and stores data in database systems',
       nodeType: 'receiver' as const,
-      sources: ['db_status', 'record_id', 'query_result'],
+      sources: [], // Receivers primarily receive
       access_types: {
-        canSend: true, // Can send database status, record IDs
+        canSend: false, // Receivers primarily receive
         canReceive: true,
-        allowedSendTypes: ['status', 'id', 'query_result'],
+        allowedSendTypes: [],
         allowedReceiveTypes: ['json', 'text', 'binary', 'sql']
       }
     } as Partial<ReceiverNodeData>
@@ -109,11 +109,11 @@ export const nodeTemplates: NodeTemplate[] = [
       name: 'Webhook Receiver',
       description: 'Listens for incoming webhook requests',
       nodeType: 'receiver' as const,
-      sources: ['webhook_response', 'headers_output'],
+      sources: [], // Receivers primarily receive
       access_types: {
-        canSend: true, // Can send webhook responses
+        canSend: false, // Receivers primarily receive
         canReceive: true,
-        allowedSendTypes: ['json', 'status', 'headers'],
+        allowedSendTypes: [],
         allowedReceiveTypes: ['json', 'xml', 'text', 'form_data']
       }
     } as Partial<ReceiverNodeData>
