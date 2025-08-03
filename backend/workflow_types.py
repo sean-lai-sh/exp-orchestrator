@@ -24,3 +24,11 @@ class Edge(BaseModel):
 class Workflow(BaseModel):
     nodes: Dict[str, Node]
     edges: List[Edge]
+
+# Dependcy type. We can have versioned to a specific numeric version, saying version X > or something else
+class Dependency(BaseModel):
+    name: str
+    version: Optional[str] = None  # e.g. "1.2.3", ">=1.0.0", etc
+    type: Literal["package", "lockfile"] = "package"  # package or lockfile
+    hash: Optional[str] = None  # hash for lockfiles
+    optional: bool = False  # if this dependency is optional
