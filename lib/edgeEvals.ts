@@ -3,7 +3,7 @@ import type {
     SerializableTypeCompatRule,
     TypeValidator,
 } from './types';
-
+import { toast } from 'sonner';
 import defaultRulesRaw from './CompatRules/DefaultCompatibilityRules.json';
 
 const defaultRules = defaultRulesRaw as SerializableTypeCompatRule[];
@@ -24,23 +24,28 @@ function buildValidator(
     return (from: string, to: string): CompatibilityLevel => {
         for (const rule of allRules) {
             if ('from' in rule && 'to' in rule && rule.from === from && rule.to === to) {
+                showToast(rule.result, from, to);
                 return rule.result;
             }
         }
 
         // Global rule: anything → bytes = 'ok'
         if (to === 'bytes') {
-            return 'ok';
+            showToast('warn', from, to);
+            return 'warn';
         }
 
         // Global rule: bytes → anything else = 'warn'
         if (from === 'bytes' && to !== 'bytes') {
+            showToast('warn', from, to);
             return 'warn';
         }
 
         // Fallback
         const fallback = allRules.find((r) => 'default' in r && r.default);
-        return fallback ? fallback.result : 'error';
+        const result = fallback ? fallback.result : 'error'
+        showToast(result, from, to);
+        return result;
     };
 }
   
@@ -82,6 +87,17 @@ export function resetUserRules(): void {
 let validate: TypeValidator = buildValidator(defaultRules, userRules);
 
 
-
+function showToast(result: CompatibilityLevel, from: string, to: string) {
+    if (result === 'ok') {
+      toast.success(`Types are compatible: ${from} → ${to}`);
+    } else if (result === 'warn') {
+      toast(`⚠️ Warning: Risky coercion ${from} → ${to}`, {
+        description: `Double-check this transfer and ensure it fufills your needs. It may not handle ALL edge cases! ${to === 'bytes' ? ' Always be wary how you handle bytes!' : ''}`,
+      });
+    } else {
+      toast.error(`Error: Incompatible types ${from} → ${to}`);
+    }
+  }
+  
 
 export { validate };
