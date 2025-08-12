@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -14,7 +14,7 @@ import {
   EdgeChange,
   applyNodeChanges,
   applyEdgeChanges,
-  XYPosition,
+  // XYPosition,
   Panel,
   MarkerType,
 } from '@xyflow/react';
@@ -52,29 +52,30 @@ function CanvasContents() {
   const isStorageLoading = storageStatus !== "synchronized";
 
   const nodes = useStorage((root) => {
-    return (root.nodes ?? [])
-      .filter((liveNode): liveNode is LiveObject<StorageNodeData> => 
+    const rawNodes = root.nodes ?? [];
+    console.log('Raw nodes array:', rawNodes);
+    return (rawNodes)
+      .filter((liveNode): liveNode is StorageNodeData => 
         liveNode != null && liveNode instanceof LiveObject
       )
       .map((liveNode): FlowNode => {
-        const node = liveNode.toObject() as StorageNodeData;
         return {
-          id: node.id,
+          id: liveNode.id,
           type: 'custom',
-          position: node.position || { x: 0, y: 0 },
-          data: node.data,
+          position: liveNode.position || { x: 0, y: 0 },
+          data: liveNode.data,
           draggable: true,
           connectable: true,
           selectable: true,
-        };
+      };
       });
   });
 
   const edges = useStorage((root) => {
     return (root.edges ?? [])
-      .filter((liveEdge): liveEdge is LiveObject<StorageEdgeData> => liveEdge != null)
+      .filter((liveEdge): liveEdge is StorageEdgeData => liveEdge != null)
       .map((liveEdge): Edge => {
-        const edge = liveEdge.toObject();
+        const edge = liveEdge;
         return {
           id: edge.id,
           source: edge.source,
@@ -86,6 +87,13 @@ function CanvasContents() {
         };
       });
   });
+
+  // Debugging: Log nodes and edges whenever they change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    console.debug("Liveblocks Nodes:", nodes);
+    console.debug("Liveblocks Edges:", edges);
+  }, [nodes, edges]);
 
   const updateNodes = useMutation(({ storage }, newFlowNodes: FlowNode[]) => {
     const liveListNodes = storage.get('nodes');

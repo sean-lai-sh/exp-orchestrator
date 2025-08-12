@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Exp-Orchestrator
 
-## Getting Started
+A visual orchestration tool built with React, React Flow, and FastAPI for deploying and managing node-based workflows. This README summarizes the main files and components so you can quickly understand and revisit the project structure.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Project Structure & Key Files
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Frontend (React/Next.js)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **components/canvas/MinimalCanvas.tsx**
+  - The main canvas and flow editor. Manages the state of nodes and edges, handles adding nodes, deploying, and UI overlays (deploy progress, confirmation, blur, etc). Integrates with React Flow for the visual node/edge editor.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **components/canvas/CustomEditableNode.tsx**
+  - The custom node component rendered on the canvas. Allows inline editing of node name and description, and displays connection handles for React Flow.
 
-## Learn More
+- **components/ui/ComponentPanel.tsx**
+  - The right-side panel for editing the properties of the currently selected node. Uses the `SecureTokenDisplay` for secure token handling and exposes fields for name, token, access types, etc.
 
-To learn more about Next.js, take a look at the following resources:
+- **components/ui/CanvasPanel.tsx**
+  - The left-side panel for canvas controls. Contains buttons for adding nodes and deploying the current flow. Handles deploy button state and animation.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **components/ui/SecureTokenDisplay.tsx**
+  - A reusable component for displaying sensitive tokens. Supports reveal/hide, copy-to-clipboard, and toast feedback, with masked display for security.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **components/canvas/AnimatedSVGEdge.tsx**
+  - (If present) Custom edge rendering for animated SVG edges in the flow.
 
-## Deploy on Vercel
+- **lib/types.ts**
+  - Centralized TypeScript type definitions for node data, props, and compatibility logic. All node-related types are imported from here for consistency.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Key Features
+- **Visual Node Editor:** Drag, connect, and edit nodes on a canvas.
+- **Secure Token Handling:** Tokens are masked, can be revealed, and copied with feedback.
+- **Deploy Workflow:** Deploy button with confirmation modal, animated progress bar, and checkmark feedback.
+- **Type Safety:** All node types and props are managed in `lib/types.ts`.
+
+---
+
+## Backend (FastAPI)
+- **/deploy endpoint**
+  - Expects a POST request with `{ nodes, edges }` as JSON. Used for deploying the current flow from the frontend.
+
+---
+
+## How to Extend
+- Add new node types by editing `CustomEditableNode.tsx` and updating types in `lib/types.ts`.
+- Add new panels or controls by extending `CanvasPanel.tsx` or `ComponentPanel.tsx`.
+- Integrate more backend endpoints as needed for your orchestration logic.
+
+---
+
+## Quick Start
+1. Install dependencies: `npm install` (frontend) and `pip install fastapi` (backend).
+2. Run the frontend: `npm run dev`.
+3. Run the backend: `uvicorn main:app --reload` (assuming your FastAPI app is in `main.py`).
+4. Open the app in your browser and start building flows!
+
+---
+
+## Notes
+- All sensitive actions (like deploy) have confirmation and feedback for safety.
+- All node-related types should be added to `lib/types.ts` for consistency.
+- The UI is designed for extensibility and clarity.
+
+---
+
+Feel free to update this README as you add new features or files!
