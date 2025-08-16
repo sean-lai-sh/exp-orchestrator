@@ -40,7 +40,13 @@ if __name__ == "__main__":
         "ENV_VAR_3": "SUCCESS",
         "ENV_VAR_4": "SUCCESS"
     }
-    image_name = "test_image:latest"
+    image_name = Node(
+        id="test",
+        type="plugin",
+        deps=["example-dependency"],
+        runtime="test_image:latest",
+        needs_gpu=False,
+    )
     
     inject_vars_to_image(env_vars, image_name)
     print("Environment variables injected successfully.")
