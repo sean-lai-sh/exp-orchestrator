@@ -1,5 +1,62 @@
+import deque
 import subprocess
 import os
+
+
+def process_workflow(adjacency_list):
+    for edge in adjacency_list:
+        src = edge['source']
+        dst = edge['target']
+        edge_stream_type = edge['data']
+        # check that stream type is in the src out streams
+        if edge_stream_type not in src['out_streams']:
+            raise ValueError(f"Stream type {edge_stream_type} not found in source {src['id']} out streams")
+        
+        # check that stream type is in the dst in streams
+        if edge_stream_type not in dst['in_streams']:
+            raise ValueError(f"Stream type {edge_stream_type} not found in destination {dst['id']} in streams")
+        
+        creds = generate_pub_sub_cred(edge_stream_type, src, dst)
+        src['out_creds'][edge_stream_type] = creds
+        dst['in_creds'][edge_stream_type] = creds
+
+    return 200
+
+def queue_deployments(node_list, deployment_queue: deque):
+    for node in node_list:
+        if node['type'] == 'plugin':
+            deployment_queue.append(node)
+
+        else:
+            continue
+    return 200
+
+def assign_deployment():
+    ## 1. Query relevant nodes in kubernetes
+    ## 2. Identify rel to latency and usage in region, which existing (or new) corelink server node to host experiment
+    ## 3. Assign deployment to node, fetching either a deployment queue api or deploy node b4 fetching
+    ## return a queue that can help.
+    pass
+
+def generate_pub_sub_cred(stream_type, src, dst): ## To be impl
+    """
+    
+    Output
+        Workspace : str
+        Protocol : str 
+        StreamID : str
+        data_type : str
+        metadata : str
+    """
+    cred = {
+        "workspace": f"{src['id']}_{dst['id']}_{stream_type}_workspace",
+        "protocol": "pubsub",
+        "stream_id": f"{src['id']}_{dst['id']}_{stream_type}_stream",
+        "data_type": stream_type,
+        "metadata": {} #TODO: Depending on Node impl we are to use the src descript of the source to inform stuff.
+    }
+    return cred
+
 
 
 def inject_vars_to_image(env_vars: dict, image_name: str) -> None:
@@ -24,8 +81,6 @@ def inject_vars_to_image(env_vars: dict, image_name: str) -> None:
 
     # Clean up the temporary compose file
     #os.remove(compose_file)
-
-
 
 if __name__ == "__main__":
     # Example usage
