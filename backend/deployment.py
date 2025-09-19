@@ -1,6 +1,4 @@
 import deque
-import subprocess
-import os
 
 
 def process_workflow(adjacency_list):
