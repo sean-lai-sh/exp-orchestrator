@@ -1,0 +1,1 @@
+Docker images for people to use. Mostly for us to have a docker isntance that can run and build our docker files for ECS/ECR or local docker.
