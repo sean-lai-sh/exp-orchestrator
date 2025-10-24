@@ -1,4 +1,5 @@
-import deque
+import subprocess
+from collections import deque
 
 
 def process_workflow(adjacency_list):
@@ -75,7 +76,7 @@ def inject_vars_to_image(env_vars: dict, image_name: str) -> None:
             f.write(f"      - {key}={value}\n")
 
     # Run docker compose to inject the environment variables
-    #subprocess.run(["docker-compose", "-f", compose_file, "up", "-d"], check=True)
+    subprocess.run(["docker-compose", "-f", compose_file, "up", "-d"], check=True)
 
     # Clean up the temporary compose file
     #os.remove(compose_file)
