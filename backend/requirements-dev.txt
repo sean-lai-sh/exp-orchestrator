@@ -1,0 +1,2 @@
+# Dev/test-only dependencies for backend scripts (not production runtime)
+colorama==0.4.6
