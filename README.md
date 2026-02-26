@@ -42,6 +42,10 @@ A visual orchestration tool built with React, React Flow, and FastAPI for deploy
 ## Backend (FastAPI)
 - **/deploy endpoint**
   - Expects a POST request with `{ nodes, edges }` as JSON. Used for deploying the current flow from the frontend.
+- **Backend docs**
+  - Backend quick start and inline deploy usage: `backend/README.md`
+  - Detailed deployment docs: `backend/docs/DEPLOYMENT.md`
+  - Backend organization map: `backend/docs/BACKEND_ORGANIZATION.md`
 
 ---
 

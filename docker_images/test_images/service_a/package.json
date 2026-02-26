@@ -1,0 +1,9 @@
+{
+  "name": "service-a",
+  "version": "1.0.0",
+  "description": "Test chain middleware — receives /check, forwards POST to /good",
+  "main": "index.js",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

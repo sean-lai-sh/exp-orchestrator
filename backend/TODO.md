@@ -4,3 +4,8 @@
 - [x] Create a concrete `deploy()` function that runs DAG ordering, stream credential generation, and deployment queueing.
 - [x] Wire FastAPI `/deploy` endpoint to call the shared `deploy()` function.
 - [ ] Align frontend deploy payload shape with backend `DeployWorkflow` contract end-to-end.
+- [ ] Add Corelink URL provider module (new script, e.g. `corelink_provider.py`) for deploy-time server URL assignment.
+- [ ] During deploy, resolve and inject `CORELINK_URL` for each assigned plugin node.
+- [ ] Add server capability/config matching before assignment (runtime/modules/resource checks).
+- [ ] If no existing server can run the workflow, trigger provisioning flow and return a new candidate server list.
+- [ ] Persist assignment decision + capability reason in deploy response for observability/debugging.

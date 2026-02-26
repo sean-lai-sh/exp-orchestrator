@@ -1,0 +1,9 @@
+{
+  "name": "service-b",
+  "version": "1.0.0",
+  "description": "Test chain terminal — receives /good, exposes GET /status",
+  "main": "index.js",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

@@ -1,26 +1,78 @@
-# Backend Orchestrator Package
+# Backend
 
-This package provides a complete orchestration pipeline for workflows defined via JSON APIs. The key modules include:
+This backend currently has two active tracks:
 
-- **fetcher.py**: Fetch and ingest workflow definitions from an API endpoint.
-- **signature.py**: Compute unique signatures for workflow nodes based on config.
-- **planner.py**: Group nodes by signature and generate container specs.
-- **docker_utils.py**: Build and push Docker images for each container spec.
-- **registry.py**: Insert or update container metadata in a Postgres registry.
-- **workflowprocessor.py**: Master function `orchestrate_workflow` tying all steps together.
+1. FastAPI deployment planning (`main.py` + `deployment.py`)
+2. Earlier orchestration pipeline utilities (`fetcher.py`, `signature.py`, `planner.py`, `docker_utils.py`, `registry.py`)
 
-## Usage
+## Docs
+
+- [Using `deploy()`](./docs/DEPLOYMENT.md)
+- [Backend organization map](./docs/BACKEND_ORGANIZATION.md)
+
+## Quick Start (Deployment API)
 
 1. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-2. Set the registry database URL:
+2. Run API server:
    ```bash
-   export REGISTRY_DB_URL="postgres://user:pass@host:port/db"
+   uvicorn main:app --reload --port 8000
    ```
-3. Call `orchestrate_workflow(api_url, workflow_id)` to execute the full pipeline.
+3. Call deploy endpoint:
+   ```bash
+   curl -X POST "http://127.0.0.1:8000/deploy" \
+     -H "Content-Type: application/json" \
+     -d '{"nodes":[{"id":"source","type":"sender","out_streams":["json"]},{"id":"plugin-a","type":"plugin","runtime":"test_image","in_streams":["json"]}],"edges":[{"source":"source","target":"plugin-a","data":"json"}]}'
+   ```
 
-## Development
+## Deploy Usage (Inline)
 
-Add your Postgres schema for the `containers` table and ensure Docker Daemon is running.
+Core function:
+
+```python
+deploy(workflow: DeployWorkflow, inject_env: bool = False) -> dict
+```
+
+Input model:
+
+- `workflow.nodes`: list of `DeployNode`
+- `workflow.edges`: list of `DeployEdge`
+
+Important node/edge fields:
+
+- `DeployNode.id`, `DeployNode.type`, `DeployNode.runtime`
+- `DeployNode.in_streams`, `DeployNode.out_streams`, `DeployNode.env_vars`
+- `DeployEdge.source`, `DeployEdge.target`, `DeployEdge.data` (defaults to `json`)
+
+What `deploy()` returns:
+
+- `topological_order`, `dag_graph`, `adjacency_list`
+- `queued_plugins`, `assigned_nodes`
+- `env_plan`
+- `injected_nodes`, `skipped_nodes`
+- `credentials_by_node`
+
+Behavior summary:
+
+- Validates all edge endpoints exist.
+- Computes DAG order (fails on cycle).
+- Generates per-edge stream credentials.
+- Queues only `type == "plugin"` nodes for deployment.
+- Builds env vars per queued plugin.
+- If `inject_env=true`, attempts Docker env injection into runtime image.
+
+For complete details and examples:
+
+- [Using `deploy()`](./docs/DEPLOYMENT.md)
+
+## Current Module Breakdown
+
+- `main.py`: FastAPI app and `POST /deploy` route.
+- `deployment.py`: Core deploy planner (DAG order, stream creds, plugin queue, env var plan, optional Docker env injection).
+- `workflow_types.py`: Pydantic models for workflow and deploy payloads.
+- `dag.py`: Topological sort utility with cycle detection.
+- `test_deploy.py`: Docker-based chain integration test script.
+- `fetcher.py`, `signature.py`, `planner.py`, `docker_utils.py`, `registry.py`: Utility modules for broader orchestration pipeline.
+- `workflowprocessor.py`: Placeholder (currently empty).
