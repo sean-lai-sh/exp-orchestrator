@@ -1,9 +1,0 @@
-version: '3.8'
-services:
-  app:
-    image: test_image
-    environment:
-      - ENV_VAR_1=SUCCESS
-      - ENV_VAR_2=SUCCESS
-      - ENV_VAR_3=SUCCESS
-      - ENV_VAR_4=SUCCESS
