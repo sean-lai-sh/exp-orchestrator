@@ -2,43 +2,42 @@ name: Backend Pytest
 
 "on":
   pull_request:
-      paths:
-            - "backend/**"
-                  - ".github/workflows/backend-pytest.yml"
-                    push:
-                        branches:
-                              - main
-                                    - issue-17-backend-pytest
-                                        paths:
-                                              - "backend/**"
-                                                    - ".github/workflows/backend-pytest.yml"
-                                                      workflow_dispatch:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-pytest.yml"
+  push:
+    branches:
+      - main
+      - issue-17-backend-pytest
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-pytest.yml"
+  workflow_dispatch:
 
-                                                      jobs:
-                                                        backend-pytest:
-                                                            runs-on: ubuntu-latest
-                                                                defaults:
-                                                                      run:
-                                                                              working-directory: backend
+jobs:
+  backend-pytest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
 
-                                                                                  steps:
-                                                                                        - name: Check out repository
-                                                                                                uses: actions/checkout@v4
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-                                                                                                      - name: Set up Python
-                                                                                                              uses: actions/setup-python@v5
-                                                                                                                      with:
-                                                                                                                                python-version: "3.11"
-                                                                                                                                          cache: "pip"
-                                                                                                                                                    cache-dependency-path: |
-                                                                                                                                                                backend/requirements.txt
-                                                                                                                                                                            backend/requirements-dev.txt
-                                                                                                                                                                            
-                                                                                                                                                                                  - name: Install backend dependencies
-                                                                                                                                                                                          run: |
-                                                                                                                                                                                                    python -m pip install --upgrade pip
-                                                                                                                                                                                                              pip install -r requirements.txt -r requirements-dev.txt
-                                                                                                                                                                                                              
-                                                                                                                                                                                                                    - name: Run backend pytest suite
-                                                                                                                                                                                                                            run: python -m pytest -q
-                                                                                                                                                                                                                            
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run backend pytest suite
+        run: python -m pytest -q
