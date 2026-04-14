@@ -1,6 +1,6 @@
 name: Backend Pytest
 
-on:
+"on":
   pull_request:
       paths:
             - "backend/**"
