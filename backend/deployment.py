@@ -200,7 +200,7 @@ def deploy(workflow: DeployWorkflow, inject_env: bool = False) -> Dict[str, Any]
         "credentials_by_node": creds_by_node,
     }
 
-def fetch_image_name(node: Node) -> str:
+def fetch_image_name(node: DeployNode) -> str:
     """
     Fetch the image name from the node.
     This function assumes that the node has an 'image' attribute.
