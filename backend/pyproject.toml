@@ -7,4 +7,8 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["colorama==0.4.6"]
+dev = ["colorama==0.4.6", "pytest==8.4.1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

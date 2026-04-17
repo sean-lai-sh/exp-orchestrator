@@ -67,6 +67,17 @@ For complete details and examples:
 
 - [Using `deploy()`](./docs/DEPLOYMENT.md)
 
+## Running the Backend Test Suite
+
+Install the backend dev dependencies and run pytest from the `backend/` directory:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest
+```
+
+The pytest suite is intentionally safe to rerun. Planner coverage uses fresh `DeployWorkflow` fixtures on every test, and the Docker env-injection helper test replaces container startup with mocks while still verifying that the generated temporary compose file is cleaned up afterward. The older `test_deploy.py` script remains available as a manual Docker integration check, but it is no longer part of the default pytest collection.
+
 ## Current Module Breakdown
 
 - `main.py`: FastAPI app and `POST /deploy` route.
