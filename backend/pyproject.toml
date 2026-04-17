@@ -4,7 +4,17 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "fastapi==0.115.0",
+    "uvicorn==0.30.6",
+    "pydantic>=2.0",
+    "python-multipart>=0.0.9",
+]
 
 [project.optional-dependencies]
-dev = ["colorama==0.4.6"]
+dev = ["colorama==0.4.6", "pytest==8.4.1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["."]
