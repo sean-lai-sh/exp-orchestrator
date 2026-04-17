@@ -1,0 +1,8 @@
+# Generated certificates
+certs/*.pem
+certs/*.srl
+certs/ca-serial
+certs/ca-database.txt
+
+# Docker compose env
+.env

@@ -1,0 +1,6 @@
+{
+    key: '/app/config/server-key.pem',
+    cert: '/app/config/server-crt.pem',
+    ca: '/app/config/ca-crt.pem',
+    stunEnabled: false
+}
