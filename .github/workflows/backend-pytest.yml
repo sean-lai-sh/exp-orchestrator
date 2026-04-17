@@ -1,21 +1,24 @@
-name: Backend Pytest
+name: Test Suite
 
 "on":
   pull_request:
     paths:
       - "backend/**"
+      - "plugins/**"
       - ".github/workflows/backend-pytest.yml"
   push:
     branches:
       - main
-      - issue-17-backend-pytest
     paths:
       - "backend/**"
+      - "plugins/**"
       - ".github/workflows/backend-pytest.yml"
   workflow_dispatch:
 
 jobs:
-  backend-pytest:
+  # ── Job 1: Backend deployment planner + plugin validation ─────────────────
+  backend:
+    name: Backend Tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -25,7 +28,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -39,5 +42,75 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Run backend pytest suite
-        run: python -m pytest -q
+      - name: "[backend] Deployment planner"
+        run: python -m pytest tests/test_deployment_planner.py -v
+
+      - name: "[backend] Plugin upload validation"
+        run: python -m pytest tests/test_plugin_validation.py -v
+
+  # ── Job 2: Reference plugin unit tests ────────────────────────────────────
+  reference-plugin:
+    name: Reference Plugin Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/reference_plugin
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: plugins/reference_plugin/requirements.txt
+
+      - name: Install plugin dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install fastapi uvicorn httpx pytest pytest-asyncio anyio
+
+      - name: "[plugin] Env var parsing"
+        run: python -m pytest tests/test_plugin.py::TestParseStreamEnv -v
+
+      - name: "[plugin] Data transform"
+        run: python -m pytest tests/test_plugin.py::TestTransform -v
+
+      - name: "[plugin] Fanned parameter updates"
+        run: python -m pytest tests/test_plugin.py::TestOnServerMsg -v
+
+      - name: "[plugin] Inbound data routing"
+        run: python -m pytest tests/test_plugin.py::TestOnData -v
+
+      - name: "[plugin] HTTP endpoints (health + run)"
+        run: python -m pytest tests/test_plugin.py::TestHealthEndpoint tests/test_plugin.py::TestRunEndpoint -v
+
+  # ── Job 3: Reference plugin Dockerfile builds ─────────────────────────────
+  plugin-docker-build:
+    name: Reference Plugin Docker Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build reference plugin image
+        uses: docker/build-push-action@v6
+        with:
+          context: plugins/reference_plugin
+          push: false
+          tags: ref-plugin:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test — /health endpoint
+        run: |
+          docker run -d --name ref-plugin-ci -p 8080:8080 ref-plugin:ci
+          sleep 3
+          curl --retry 5 --retry-delay 1 --fail http://localhost:8080/health
+          docker rm -f ref-plugin-ci
