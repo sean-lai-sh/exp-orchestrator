@@ -1,103 +1,90 @@
-
 # Exp-Orchestrator Frontend: Technical Documentation
 
-## 1. Node & Edge Data Model
+## 1. Node and Edge Data Model
 
-- **Node Representation:**
-  - All nodes are instances of `Node<EditableNodeData>` from `@xyflow/react`.
-  - `EditableNodeData` is a discriminated union (see `lib/types.ts`) with at least:
-    - `nodeType: 'sender' | 'plugin' | 'receiver'`
-    - `name`, `description`, `token`, `sources`, `access_types`, plus custom fields
-  - Node state is managed in the main canvas component and updated via the property panel.
-  - Node IDs are UUIDs (see `generateToken()` for secure random generation).
+- **Node representation**
+  - All workflow nodes are `Node<EditableNodeData>` instances from `@xyflow/react`.
+  - `EditableNodeData` contains the canonical editor fields: `nodeType`, `name`, `description`, `token`, `sources`, `access_types`, and optional deployment metadata such as `runtime`.
+  - Node state is owned by `components/canvas/MinimalCanvas.tsx`, while `components/ui/ComponentPanel.tsx` is the maintained inspection and editing surface.
 
-- **Edge Representation:**
-  - Edges are objects with `id`, `source`, `target`, and optional metadata.
-  - All edge state is colocated with node state for atomic updates.
-  - Edges are the single source of truth for workflow topology.
+- **Edge representation**
+  - Edges track `id`, `source`, `target`, and lightweight metadata such as `streamType`, `label`, and analyzer-driven invalid state.
+  - Edge metadata is normalized by `lib/workflow-validation.ts` so the frontend analyzer and backend dry-run validation use the same stream derivation rules.
 
-- **Data Flow:**
-  - All node/edge mutations are performed via React state setters.
-  - Node data is always updated immutably to ensure React reconciliation.
-  - The property panel (`ComponentPanel_enhanced.tsx`) is the canonical place for node data editing.
+## 2. Canonical Editing Path
 
-## 2. Workflow Auto-Fix (Clean Workflow Algorithm)
+- `components/canvas/MinimalCanvas.tsx` is the single maintained DAG editor.
+- `components/ui/CanvasPanel.tsx` is the only supported left-side creation and deploy-preparation surface.
+- Retired canvas and panel variants have been removed so there is one clear editing path for future work.
 
-- **Goal:**
-  - Enforce readable, horizontally-organized workflows that reflect actual data flow, not just type grouping.
+## 3. Node Creation and Editing UX
 
-- **Algorithm Details:**
-  - For each sender node, traverse outgoing edges to build a chain: sender → plugin(s) → receiver.
-  - Each chain is assigned a horizontal row (Y offset = chain index * VERTICAL_SPACING).
-  - Nodes in a chain are spaced horizontally (X offset = node index in chain * HORIZONTAL_SPACING).
-  - Isolated nodes (no edges) are grouped by type and placed below all chains.
-  - All layout is deterministic and idempotent (re-running produces the same result).
-  - See `handleCleanWorkflow` in `MinimalCanvas.tsx` for implementation.
+- **Creation**
+  - Nodes can be created from quick-add shortcuts, grouped template sections, context menus, or drag-to-create from the left panel onto the canvas.
+  - Keyboard shortcuts are available from the canvas: `S` for sender, `R` for receiver, `P` for plugin, `Delete` / `Backspace` to remove the selected node, and `Cmd/Ctrl + D` to duplicate it.
 
-- **Edge Cases:**
-  - Cycles are not supported; the algorithm will break at the first repeated node.
-  - Multiple parallel chains are supported and visually separated.
+- **Inspection**
+  - `ComponentPanel.tsx` shows incoming and outgoing connection summaries, runtime readiness, related analyzer blockers and warnings, and required-field indicators.
+  - Base properties auto-apply immediately; advanced token changes remain explicit and confirmation-based.
 
-## 3. Node Property Panel (ComponentPanel)
+## 4. DAG Analyzer
 
-- **Architecture:**
-  - Controlled form with local state for editing, only committing on apply.
-  - Collapsible sections: base (standard fields), custom (dynamic fields), advanced (token, etc).
-  - Source management: add/remove/edit for sender/receiver nodes, always type-safe.
-  - Token management: secure display, regeneration with confirmation, and toast feedback.
-  - All changes are validated and merged immutably into the node state.
+- `lib/dag-analyzer.ts` performs real-time analysis on node and edge changes using a debounced update loop.
+- The analyzer currently checks:
+  - cycle detection using Kahn-style topological ordering, matching the backend DAG utility behavior
+  - dangling edges that reference missing nodes
+  - invalid node-type connections such as receiver outbound edges or sender inbound edges
+  - plugin runtime readiness and unapproved runtime warnings
+  - stream compatibility between edge data types and node declarations
+  - orphan nodes that are disconnected from the workflow
 
-## 4. Context Menus & Node Actions
+- `components/ui/AnalyzerPanel.tsx` presents these results in a structured panel with:
+  - blocker and warning counts
+  - deploy readiness progress for plugin nodes
+  - grouped issue sections by category
+  - click-to-focus issue highlighting on the canvas
 
-- **Implementation:**
-  - Right-click context menus via shadcn/ui + Radix primitives.
-  - Node actions: delete, duplicate, add, etc. All actions update state atomically.
-  - Context menu state is managed per-node for performance and clarity.
+## 5. Backend Validation Dry Run
 
-## 5. Visual System & Usability
+- `app/api/deploy/route.ts` is the frontend entry point for backend-style deploy validation.
+- The route maps the frontend graph into the backend `DeployWorkflow` schema using `lib/workflow-validation.ts`.
+- The route then invokes `backend/validate_workflow_cli.py`, which executes the real backend deployment validation path without environment injection.
+- This means the editor can surface both:
+  - **frontend analyzer feedback** for instant UX-level guidance, and
+  - **backend dry-run feedback** for deploy-readiness confirmation.
 
-- **Handles:**
-  - Source handles are color-coded by type (see `sourceColors` utility).
-  - Handle positions are calculated for dot-to-dot precision.
+## 6. Clean Workflow Layout
 
-- **Highlighting:**
-  - Node selection and context menu highlighting are visually distinct.
+- The clean-layout action reorganizes nodes by inferred workflow depth.
+- Incoming edges are used to estimate layer depth, and nodes are repositioned into horizontally ordered levels.
+- The algorithm is deterministic for the same graph state and is intended to improve readability before validation and deploy preparation.
 
-- **Templates:**
-  - Templated node creation is type-safe and uses dropdowns with search and categorization.
+## 7. Visual Feedback and Highlighting
 
-## 6. State Management & Feedback
+- Nodes with analyzer blockers receive error highlighting.
+- Nodes with warnings receive softer caution highlighting.
+- Focused analyzer issues override normal highlighting so the relevant nodes and edges are easy to inspect.
+- `AnimatedSVGEdge.tsx` renders stream-type badges on edges and applies dashed red styling to invalid connections.
 
-- **React State:**
-  - All workflow state (nodes, edges, UI) is managed via hooks in the main canvas.
-  - No global state library is used; all state is colocated for simplicity.
+## 8. Testing
 
-- **Feedback:**
-  - Uses `sonner` for toast notifications.
-  - All destructive actions (delete, regenerate token, clean workflow) require confirmation.
-  - Loading and animation states are explicit and cancelable.
-
-## 7. Extensibility & Internal Practices
-
-- **TypeScript:**
-  - All data structures and components are strictly typed.
-  - Discriminated unions are used for node types to enable exhaustive checks.
-
-- **Componentization:**
-  - All UI is modular and composable. No monolithic components.
-
-- **Reasoning:**
-  - All architectural choices are made for maintainability, testability, and developer velocity.
-  - All algorithms are deterministic and side-effect free (except for UI feedback).
+- `lib/dag-analyzer.test.ts` provides unit coverage for:
+  - valid linear workflows
+  - cycle detection
+  - invalid connection and missing-runtime blockers
+  - stream incompatibility
+  - frontend-to-backend workflow payload mapping
 
 ## References
 
 - Main Canvas: `components/canvas/MinimalCanvas.tsx`
-- Node Editor: `components/ui/ComponentPanel_enhanced.tsx`
-- UI Components: `components/ui/`
-- Node Types: `components/nodes/`
-- Types: `lib/types.ts`
+- Left Panel: `components/ui/CanvasPanel.tsx`
+- Right Panel: `components/ui/ComponentPanel.tsx`
+- Analyzer Panel: `components/ui/AnalyzerPanel.tsx`
+- Analyzer Logic: `lib/dag-analyzer.ts`
+- Workflow Mapping: `lib/workflow-validation.ts`
+- Backend Validation Bridge: `app/api/deploy/route.ts`
 
 ---
 
-For further technical details, see code comments and the above files. All contributors are expected to follow the patterns and practices described here.
+Contributors should extend the maintained editor path rather than reintroducing alternate canvas or panel implementations.
