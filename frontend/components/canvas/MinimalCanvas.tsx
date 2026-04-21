@@ -44,6 +44,8 @@ import type {
 import { AnimatedSVGEdge } from './AnimatedSVGEdge';
 import { analyzeDAG, type AnalysisResult, type AnalyzerIssue } from '../../lib/dag-analyzer';
 import { getEdgeStreamType, getNodeOutputTypes } from '../../lib/workflow-validation';
+import { toast } from 'sonner';
+import { buildDeployWorkflow } from '../../lib/deploy-types';
 
 function getDefaultNodeData(type: NodeType, template?: NodeTemplate): EditableNodeData {
   const baseToken = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-${Date.now()}`;
@@ -320,6 +322,56 @@ function FlowContent() {
     setSelectedNodeForPanel(null);
   }, []);
 
+  const handleDeploy = useCallback(async () => {
+    setIsDeploying(true);
+    setDeployAnimationActive(true);
+    setShowCheckmark(false);
+    const MIN_DURATION = 1500;
+    const start = Date.now();
+
+    try {
+      const payload = buildDeployWorkflow(nodes, edges);
+      const res = await fetch('/api/deploy?inject_env=true', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        if (res.status === 422 && Array.isArray(data.detail)) {
+          const messages = data.detail.map(
+            (e: { loc: (string | number)[]; msg: string }) => `${e.loc.join('.')}: ${e.msg}`
+          );
+          toast.error('Validation failed', { description: messages.join('\n') });
+        } else {
+          toast.error('Deploy failed', {
+            description: typeof data.detail === 'string' ? data.detail : `Server error (${res.status})`,
+          });
+        }
+      } else {
+        toast.success('Deploy plan generated', {
+          description: `${data.node_count} nodes, ${data.edge_count} edges queued`,
+        });
+      }
+    } catch {
+      toast.error('Deploy failed', { description: 'Could not reach the backend server' });
+    } finally {
+      const elapsed = Date.now() - start;
+      const remaining = Math.max(0, MIN_DURATION - elapsed);
+      setTimeout(() => {
+        setShowCheckmark(true);
+        setTimeout(() => {
+          setDeployAnimationActive(false);
+          setIsDeploying(false);
+          setShowDeployConfirm(false);
+          setShowCheckmark(false);
+        }, 1000);
+      }, remaining);
+    }
+  }, [nodes, edges]);
+
   const handleCleanWorkflow = useCallback(() => {
     setIsCleaning(true);
 
@@ -414,37 +466,6 @@ function FlowContent() {
       setValidationMessage(error instanceof Error ? error.message : 'Backend validation failed.');
     } finally {
       setIsValidatingBackend(false);
-    }
-  }, [edges, nodes]);
-
-  const handleDeploy = useCallback(async () => {
-    setIsDeploying(true);
-    setValidationMessage('Running deploy dry run…');
-
-    try {
-      const response = await fetch('/api/deploy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes, edges }),
-      });
-
-      const result = await response.json();
-      if (result.analysis) {
-        setAnalysisResult(result.analysis);
-      }
-
-      if (!response.ok) {
-        setValidationMessage(result.backendError || result.message || 'Deployment dry run failed.');
-        return;
-      }
-
-      const orderedNodes = result.backendPlan?.topological_order?.length ?? 0;
-      setValidationMessage(`${result.message} Planned topological steps: ${orderedNodes}.`);
-      setShowDeployConfirm(false);
-    } catch (error) {
-      setValidationMessage(error instanceof Error ? error.message : 'Deployment dry run failed.');
-    } finally {
-      setIsDeploying(false);
     }
   }, [edges, nodes]);
 
