@@ -10,6 +10,7 @@ from allocator import allocate_nodes
 from corelink_health import check_corelink_health
 from deployment import deploy
 from executor import execute_dag
+from executors import ContainerSpec, get_executor
 from inventory import load_inventory
 from plugin_validation import ValidationResult, registry_login, validate_plugin_upload
 from workflow_types import DeployWorkflow
@@ -124,3 +125,47 @@ async def deploy_with_allocation(payload: DeployWorkflow, inject_env: bool = Fal
         "error": health.error,
     }
     return {"message": "Deploy plan with allocation generated", **result}
+
+
+@app.post("/deploy/execute/v2")
+async def deploy_and_execute_v2(
+    payload: DeployWorkflow, executor: str = "local", inject_env: bool = True
+):
+    """Plan deployment and execute containers via the pluggable executor abstraction."""
+    try:
+        plan = deploy(payload, inject_env=inject_env)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    ex = get_executor(executor)
+
+    if not await ex.health_check():
+        raise HTTPException(
+            status_code=503,
+            detail=f"Executor '{executor}' is not available",
+        )
+
+    node_map = {node.id: node for node in payload.nodes}
+    results = []
+
+    for node_id in plan["queued_plugins"]:
+        node = node_map[node_id]
+        image = node.runtime or node.data.get("runtime") or node.data.get("containerImage")
+        if not image:
+            results.append(
+                asdict(
+                    ContainerSpec(node_id=node_id, image=""),
+                )
+                | {"status": "skipped", "reason": "no_runtime_image"}
+            )
+            continue
+
+        spec = ContainerSpec(
+            node_id=node_id,
+            image=image,
+            env_vars=plan.get("env_plan", {}).get(node_id, {}),
+        )
+        status = await ex.start(spec)
+        results.append(asdict(status))
+
+    return {"message": "Deploy executed", "plan": plan, "execution": results}
