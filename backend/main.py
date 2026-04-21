@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, UploadFile
 
 from allowlist import check_workflow_images
+from allocator import allocate_nodes
+from corelink_health import check_corelink_health
 from deployment import deploy
 from executor import execute_dag
+from inventory import load_inventory
 from plugin_validation import ValidationResult, registry_login, validate_plugin_upload
 from workflow_types import DeployWorkflow
 
@@ -85,3 +89,38 @@ async def upload_plugin(file: UploadFile) -> ValidationResult:
     if not result.valid:
         raise HTTPException(status_code=422, detail=result.errors)
     return result
+
+
+@app.get("/health/corelink")
+async def corelink_health():
+    """Check Corelink server health."""
+    report = await check_corelink_health()
+    return {"status": report.status.value, "latency_ms": report.latency_ms, "error": report.error}
+
+
+@app.get("/inventory")
+async def list_inventory():
+    """List managed servers."""
+    servers = load_inventory()
+    return [asdict(s) for s in servers]
+
+
+@app.post("/deploy/plan")
+async def deploy_with_allocation(payload: DeployWorkflow, inject_env: bool = False):
+    """Plan deployment with allocation decisions."""
+    try:
+        result = deploy(payload, inject_env=inject_env)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    health = await check_corelink_health()
+    node_requirements = {node.id: node.data.get("requirements", {}) for node in payload.nodes}
+    allocation = allocate_nodes(result["queued_plugins"], node_requirements, health)
+
+    result["allocation"] = [asdict(d) for d in allocation]
+    result["corelink_health"] = {
+        "status": health.status.value,
+        "latency_ms": health.latency_ms,
+        "error": health.error,
+    }
+    return {"message": "Deploy plan with allocation generated", **result}

@@ -1,0 +1,11 @@
+[
+  {
+    "id": "local-dev",
+    "hostname": "localhost",
+    "capacity": {"cpu_cores": 8, "memory_gb": 16, "gpu": null},
+    "labels": ["local", "dev"],
+    "current_load": 0.0,
+    "status": "healthy",
+    "running_nodes": []
+  }
+]
