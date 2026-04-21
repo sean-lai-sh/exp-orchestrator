@@ -1,44 +1,21 @@
-# Using `deploy()` in `deployment.py`
+`deploy(workflow: DeployWorkflow, inject_env: bool = False)` builds a deployment plan from a node-and-edge DAG, while the allowlist and executor modules extend that plan into a runtime safety and execution workflow.
 
-`deploy(workflow: DeployWorkflow, inject_env: bool = False)` builds a deployment plan from a node/edge DAG.
-
-It does all of the following:
-
-- Validates edge endpoints against known nodes.
-- Computes topological order (and detects cycles).
-- Generates per-stream pub/sub credentials for each edge.
-- Queues plugin nodes for deployment.
-- Builds per-node environment-variable plans from generated credentials.
-- Optionally runs Docker Compose to inject env vars into runtime images (`inject_env=True`).
+The deployment planner validates edge endpoints against known nodes, computes a topological order, generates per-stream pub/sub credentials, queues plugin nodes for deployment, and builds per-node environment-variable plans. When `inject_env=True`, it can also run Docker Compose to inject generated variables into queued runtime images.
 
 ## Input Contract
 
-`deploy()` expects a `DeployWorkflow` from `workflow_types.py`:
+`deploy()` expects a `DeployWorkflow` from `workflow_types.py`. The payload contains a list of `DeployNode` entries and a list of `DeployEdge` entries.
 
-- `nodes: List[DeployNode]`
-- `edges: List[DeployEdge]`
-
-### `DeployNode` (key fields)
-
-- `id: str`
-- `type: str` (only `plugin` nodes are queued for deployment)
-- `runtime: Optional[str]` (container image fallback source)
-- `in_streams: List[str]`
-- `out_streams: List[str]`
-- `env_vars: Dict[str, str]` (user-defined vars merged into computed vars)
-- `data: Dict[str, Any]` (alternate source for image name, e.g. `containerImage`)
-
-### `DeployEdge` (key fields)
-
-- `source: str`
-- `target: str`
-- `data: Optional[str]` stream type (`json` default when omitted)
+| Model | Key fields | Purpose |
+| --- | --- | --- |
+| `DeployNode` | `id`, `type`, `runtime`, `in_streams`, `out_streams`, `env_vars`, `data` | Represents a runtime-capable node in the workflow. Only `plugin` nodes are queued for deployment. |
+| `DeployEdge` | `source`, `target`, `data` | Connects two nodes and optionally names the stream type, which defaults to `json` when omitted. |
 
 ## Python Usage
 
 ```python
 from deployment import deploy
-from workflow_types import DeployWorkflow, DeployNode, DeployEdge
+from workflow_types import DeployEdge, DeployNode, DeployWorkflow
 
 workflow = DeployWorkflow(
     nodes=[
@@ -53,56 +30,65 @@ print(result["topological_order"])
 print(result["env_plan"])
 ```
 
-## API Usage (`main.py`)
+## API Usage
 
-`POST /deploy` takes the same payload model and returns:
+The backend now exposes three deployment-oriented endpoints. The original planning endpoint remains unchanged, while the new image-inspection and local-execution endpoints build on top of the deployment plan.
 
-- `message: "Deploy plan generated"`
-- full deploy result fields from `deployment.deploy()`
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/deploy` | `POST` | Generates a deployment plan and, optionally, injects environment variables into images. |
+| `/deploy/check-images` | `POST` | Performs a read-only allowlist inspection for each workflow node with a runtime image. |
+| `/deploy/execute` | `POST` | Generates a deployment plan, rejects unapproved images, pulls approved images, and starts local containers. |
 
-Example:
+A typical image-check request looks like this:
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/deploy?inject_env=false" \
+curl -X POST "http://127.0.0.1:8000/deploy/check-images" \
   -H "Content-Type: application/json" \
-  -d '{"nodes":[{"id":"source","type":"sender","out_streams":["json"]},{"id":"plugin-a","type":"plugin","runtime":"test_image","in_streams":["json"]}],"edges":[{"source":"source","target":"plugin-a","data":"json"}]}'
+  -d '{"nodes":[{"id":"plugin-a","type":"plugin","runtime":"test/plugin-a:latest"}],"edges":[]}'
 ```
 
-## Return Fields (Important)
+A typical execution request looks like this:
 
-- `topological_order`: DAG-safe node execution order.
-- `dag_graph`: graph from topological sort utility.
-- `adjacency_list`: source -> downstream list.
-- `queued_plugins`: plugin node IDs selected for deployment.
-- `assigned_nodes`: scheduler placeholder output (currently same IDs as queue).
-- `env_plan`: computed env vars per queued plugin.
-- `injected_nodes`: plugins where runtime env injection happened.
-- `skipped_nodes`: plugins skipped during injection with reason.
-- `credentials_by_node`: generated in/out stream credentials per node.
+```bash
+curl -X POST "http://127.0.0.1:8000/deploy/execute" \
+  -H "Content-Type: application/json" \
+  -d '{"nodes":[{"id":"plugin-a","type":"plugin","runtime":"test/plugin-a:latest"}],"edges":[]}'
+```
 
-## Env Injection Behavior (`inject_env=True`)
+## Return Fields
 
-When enabled, deploy tries to run each queued plugin image with generated env vars via a temporary Docker Compose file.
+The planner returns the same fields as before, including `topological_order`, `dag_graph`, `adjacency_list`, `queued_plugins`, `assigned_nodes`, `env_plan`, `injected_nodes`, `skipped_nodes`, and `credentials_by_node`.
 
-Image lookup order:
+The executor returns a structured runtime summary with the following fields.
 
-1. `node.runtime`
-2. `node.data["runtime"]`
-3. `node.data["containerImage"]`
+| Field | Meaning |
+| --- | --- |
+| `fetched` | Image references successfully pulled before execution. |
+| `started` | Containers successfully started, including node ID, image, and container ID. |
+| `skipped` | Nodes skipped because no runtime was provided, image pull failed, or container start failed. |
+| `rejected` | Nodes rejected because their runtime image was not approved. |
 
-If no image is found, node is added to `skipped_nodes`.
+## Approval Model
+
+The allowlist is stored at `backend/config/allowed_images.json`. Each key is either an exact image reference or a prefix pattern ending in `*`, and each value records whether the image is approved together with optional notes.
+
+```json
+{
+  "trusted/plugin-a:1.0": {"approved": true, "notes": "Exact image approval"},
+  "trusted/*": {"approved": true, "notes": "Namespace approval"},
+  "blocked/*": {"approved": false, "notes": "Rejected namespace"}
+}
+```
+
+The runtime image lookup order remains the same across planning, allowlist checks, and execution. The backend first uses `node.runtime`, then `node.data["runtime"]`, and finally `node.data["containerImage"]`. Nodes without any resolved runtime image are ignored by `/deploy/check-images` and recorded as skipped during `/deploy/execute`.
 
 ## Common Failures
 
-- Unknown edge endpoints:
-  - `"Edge source '...' not found in nodes"` or target equivalent.
-- Stream mismatch:
-  - stream type on edge not present in source `out_streams` or destination `in_streams`.
-- DAG cycles:
-  - `"Cycle detected"` from topological sort.
+Unknown edge endpoints still raise the same validation errors, stream mismatches still fail when the declared stream does not match the source or destination contract, and DAG cycles still raise `Cycle detected` from the topological sort utility.
+
+The new execution flow also introduces runtime-safety failures. If `/deploy/execute` encounters any unapproved image, it returns an HTTP 400 response describing the rejected nodes. If an approved image cannot be pulled or its container cannot be started, execution continues but the node is recorded in the `skipped` list with the relevant reason.
 
 ## Notes
 
-- If stream lists are omitted, stream type is inferred from edge `data` (default `json`).
-- Stream env keys are normalized (e.g. `image/jpeg` -> `IMAGE_JPEG`).
-- Current scheduler assignment is a placeholder; `assign_deployment()` can be extended for real placement logic.
+If stream lists are omitted, the planner infers them from the edge `data` value, defaulting to `json`. Stream environment keys are normalized, for example `image/jpeg` becomes `IMAGE_JPEG`. Scheduler assignment is still a placeholder implemented by `assign_deployment()`, which means the new executor currently runs containers locally after the deployment plan has already decided which plugin nodes are required.
