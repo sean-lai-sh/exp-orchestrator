@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -38,7 +39,10 @@ colorama_init(autoreset=True)
 
 CORELINK_TEST_DIR = Path(__file__).resolve().parent.parent / "docker_images" / "corelink_test"
 CERTS_DIR = CORELINK_TEST_DIR / "certs"
-CORELINK_SERVER_PATH = os.environ.get("CORELINK_SERVER_PATH", str(Path.home() / "corelink-server"))
+CORELINK_SERVER_REPO = os.environ.get(
+    "CORELINK_SERVER_REPO",
+    "https://dev.hpc.nyu.edu/corelink/corelink-server.git",
+)
 NETWORK = "corelink-test-net"
 
 TEST_NODES: Dict[str, Dict] = {
@@ -122,6 +126,60 @@ def _container_name(node_id: str) -> str:
     return f"corelink-test-{node_id.replace('_', '-')}"
 
 
+def _docker_available() -> bool:
+    return shutil.which("docker") is not None
+
+
+def require_docker() -> None:
+    if not _docker_available():
+        raise RuntimeError("docker CLI is required to run this integration test")
+
+
+def _default_corelink_server_path() -> Path:
+    runner_temp = os.environ.get("RUNNER_TEMP")
+    if runner_temp:
+        return Path(runner_temp) / "corelink-server"
+    return Path.home() / ".cache" / "corelink-server"
+
+
+def _prepare_corelink_server_checkout(path: Path) -> None:
+    knexfile_sample = path / "config" / "knexfile.js.sample"
+    knexfile = path / "config" / "knexfile.js"
+    if knexfile_sample.exists() and not knexfile.exists():
+        shutil.copy(knexfile_sample, knexfile)
+        _status("OK", "Prepared knex config", str(knexfile))
+
+
+def ensure_corelink_server_checkout() -> Path:
+    requested_path = os.environ.get("CORELINK_SERVER_PATH")
+    if requested_path:
+        checkout_path = Path(requested_path).expanduser().resolve()
+        if not checkout_path.exists():
+            raise FileNotFoundError(
+                f"CORELINK_SERVER_PATH does not exist: {checkout_path}"
+            )
+        _prepare_corelink_server_checkout(checkout_path)
+        _status("OK", "Using provided Corelink checkout", str(checkout_path))
+        return checkout_path
+
+    home_checkout = (Path.home() / "corelink-server").resolve()
+    if home_checkout.exists():
+        _prepare_corelink_server_checkout(home_checkout)
+        _status("OK", "Using home Corelink checkout", str(home_checkout))
+        return home_checkout
+
+    checkout_path = _default_corelink_server_path().resolve()
+    if not checkout_path.exists():
+        checkout_path.parent.mkdir(parents=True, exist_ok=True)
+        _status("STEP", "Cloning Corelink server", CORELINK_SERVER_REPO)
+        _run(["git", "clone", "--depth", "1", CORELINK_SERVER_REPO, str(checkout_path)])
+    else:
+        _status("OK", "Using cached Corelink checkout", str(checkout_path))
+
+    _prepare_corelink_server_checkout(checkout_path)
+    return checkout_path
+
+
 def _wait_for_health(url: str, node_id: str, timeout: int = 30) -> bool:
     for _ in range(timeout):
         try:
@@ -145,15 +203,15 @@ def generate_certs() -> None:
     _status("OK", "Certs generated")
 
 
-def build_images() -> None:
-    _status("STEP", "Building Corelink server image")
+def build_images(corelink_server_path: Path) -> None:
+    _status("STEP", "Building Corelink server image", str(corelink_server_path))
     _run([
         "docker", "build",
         "-t", TEST_NODES["corelink-server"]["image"],
         "-f", str(CORELINK_TEST_DIR / "server" / "Dockerfile"),
         "--build-context", f"certs={CERTS_DIR}",
         "--build-context", f"server-config={CORELINK_TEST_DIR / 'server'}",
-        CORELINK_SERVER_PATH,
+        str(corelink_server_path),
     ])
     _status("OK", "Server image built")
 
@@ -186,7 +244,6 @@ def deploy() -> None:
     else:
         _status("OK", "Network reused", NETWORK)
 
-    # Start server first
     node_id = "corelink-server"
     node = TEST_NODES[node_id]
     cname = _container_name(node_id)
@@ -206,16 +263,16 @@ def deploy() -> None:
     _run(cmd)
     _status("OK", f"Container up: {node_id}", cname)
 
-    # Wait for server health (TCP probe on control port)
     _status("STEP", "Waiting for Corelink server")
     time.sleep(5)
     for attempt in range(1, 31):
         try:
             import socket
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(2)
-            s.connect(("127.0.0.1", 20012))
-            s.close()
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            sock.connect(("127.0.0.1", 20012))
+            sock.close()
             _status("OK", "Corelink server ready", f"port 20012 (attempt {attempt})")
             break
         except Exception:
@@ -224,7 +281,6 @@ def deploy() -> None:
                 return
             time.sleep(1)
 
-    # Start subscriber before publisher so it's listening first
     for node_id in ["subscriber", "publisher"]:
         node = TEST_NODES[node_id]
         cname = _container_name(node_id)
@@ -246,19 +302,18 @@ def deploy() -> None:
 def run_chain_test() -> bool:
     _status("STEP", "Test", "publisher -> Corelink server -> subscriber")
     try:
+        require_docker()
+        corelink_server_path = ensure_corelink_server_checkout()
         generate_certs()
-        build_images()
+        build_images(corelink_server_path)
         deploy()
 
-        # Wait for subscriber health
         if not _wait_for_health("http://127.0.0.1:3011/health", "subscriber", timeout=30):
             return False
 
-        # Wait for publisher health
         if not _wait_for_health("http://127.0.0.1:3010/health", "publisher", timeout=30):
             return False
 
-        # Poll subscriber status until messages are received
         _status("STEP", "Polling subscriber for received messages")
         for attempt in range(1, 31):
             try:
@@ -266,8 +321,11 @@ def run_chain_test() -> bool:
                     body = json.loads(response.read())
                     received = body.get("messagesReceived", 0)
                     if received > 0:
-                        _status("OK", "Subscriber received messages",
-                                f"count={received}, last={json.dumps(body.get('lastMessage', {}))} (attempt {attempt})")
+                        _status(
+                            "OK",
+                            "Subscriber received messages",
+                            f"count={received}, last={json.dumps(body.get('lastMessage', {}))} (attempt {attempt})",
+                        )
                         return True
             except Exception:
                 pass
@@ -280,6 +338,10 @@ def run_chain_test() -> bool:
         _status("FAIL", "Unhandled error", str(exc))
         return False
     finally:
+        if not _docker_available():
+            _status("WARN", "Skipping Docker log collection and cleanup", "docker CLI not available")
+            return False
+
         _status("STEP", "Dumping container logs")
         for node_id in TEST_NODES:
             cname = _container_name(node_id)
