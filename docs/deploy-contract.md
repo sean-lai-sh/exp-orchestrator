@@ -43,10 +43,36 @@ The frontend and backend share a single deploy payload contract defined by the `
 | `data_type` | `string` | required |
 | `metadata` | `Record<string, any>` | `{}` |
 
+## Frontend API Route
+
+The frontend proxies all deploy requests through `/api/deploy`. Use the `action` query parameter to target different backend endpoints:
+
+| Action | Backend Endpoint | Description |
+|--------|-----------------|-------------|
+| `plan` (default) | `POST /deploy` | Generate deploy plan without executing |
+| `execute` | `POST /deploy/execute` | Plan + image checks + container spin-up |
+| `check-images` | `POST /deploy/check-images` | Check image allowlist approval only |
+| `plan-with-allocation` | `POST /deploy/plan` | Plan with server allocation decisions |
+
+```
+POST /api/deploy?action=plan&inject_env=true
+POST /api/deploy?action=execute
+POST /api/deploy?action=check-images
+POST /api/deploy?action=plan-with-allocation
+```
+
+### Backend Health Check
+
+```
+GET /api/backend-status
+```
+
+Returns backend reachability and Corelink server health.
+
 ## Example Request
 
 ```
-POST /deploy?inject_env=true
+POST /api/deploy?action=plan&inject_env=true
 Content-Type: application/json
 ```
 
