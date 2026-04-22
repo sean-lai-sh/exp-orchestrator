@@ -6,7 +6,6 @@ import subprocess
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from allowlist import is_approved
 from workflow_types import DeployNode
 
 
@@ -21,10 +20,6 @@ class ExecutionResult:
         return asdict(self)
 
 
-def _resolve_runtime(node: DeployNode) -> str | None:
-    return node.runtime or node.data.get("runtime") or node.data.get("containerImage") or None
-
-
 def resolve_images(deploy_result: dict[str, Any], nodes: list[DeployNode]) -> dict[str, str | None]:
     """Resolve required container images from the deploy queue."""
     node_map = {node.id: node for node in nodes}
@@ -32,7 +27,7 @@ def resolve_images(deploy_result: dict[str, Any], nodes: list[DeployNode]) -> di
 
     for node_id in deploy_result.get("queued_plugins", []):
         node = node_map[node_id]
-        required[node_id] = _resolve_runtime(node)
+        required[node_id] = node.resolve_runtime()
 
     return required
 
@@ -61,17 +56,34 @@ def start_container(
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def execute_dag(deploy_result: dict[str, Any], nodes: list[DeployNode]) -> ExecutionResult:
-    """Execute a deployment plan locally via Docker."""
+def execute_dag(
+    deploy_result: dict[str, Any],
+    nodes: list[DeployNode],
+    approved_images: set[str] | None = None,
+) -> ExecutionResult:
+    """Execute a deployment plan locally via Docker.
+
+    If ``approved_images`` is provided, it is used instead of re-checking the
+    allowlist for every node.
+    """
+    from allowlist import is_approved, load_allowlist
+
     result = ExecutionResult()
     required = resolve_images(deploy_result, nodes)
+
+    allowlist = load_allowlist() if approved_images is None else None
 
     for node_id, image in required.items():
         if image is None:
             result.skipped.append({"node_id": node_id, "reason": "no_runtime_specified"})
             continue
 
-        if not is_approved(image):
+        if approved_images is not None:
+            image_ok = image in approved_images
+        else:
+            image_ok = is_approved(image, allowlist)
+
+        if not image_ok:
             result.rejected.append(
                 {"node_id": node_id, "image": image, "reason": "not_on_allowlist"}
             )

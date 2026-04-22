@@ -85,13 +85,18 @@ def test_get_available_servers_no_match(inventory_file: Path) -> None:
     assert available == []
 
 
-def test_server_status_property() -> None:
+def test_server_status_enum() -> None:
     server = ManagedServer(
-        id="test", hostname="h", capacity={}, status="healthy"
+        id="test", hostname="h", capacity={}, status=ServerStatus.HEALTHY
     )
-    assert server.server_status == ServerStatus.HEALTHY
+    assert server.status == ServerStatus.HEALTHY
 
     server_unknown = ManagedServer(
-        id="test", hostname="h", capacity={}, status="invalid_value"
+        id="test", hostname="h", capacity={}, status=ServerStatus.UNKNOWN
     )
-    assert server_unknown.server_status == ServerStatus.UNKNOWN
+    assert server_unknown.status == ServerStatus.UNKNOWN
+
+
+def test_server_status_from_str() -> None:
+    assert ServerStatus.from_str("healthy") == ServerStatus.HEALTHY
+    assert ServerStatus.from_str("invalid_value") == ServerStatus.UNKNOWN

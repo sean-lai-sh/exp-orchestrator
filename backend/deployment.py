@@ -101,10 +101,6 @@ def build_env_vars(node: DeployNode) -> Dict[str, str]:
     return env_vars
 
 
-def fetch_image_name(node: DeployNode) -> str:
-    return node.runtime or node.data.get("runtime") or node.data.get("containerImage") or ""
-
-
 def inject_vars_to_image(env_vars: Dict[str, str], image_name: str) -> None:
     """
     Inject env_vars via docker compose into the specified image.
@@ -166,7 +162,7 @@ def deploy(workflow: DeployWorkflow, inject_env: bool = False) -> Dict[str, Any]
     for node in deployment_queue:
         env_vars = build_env_vars(node)
         env_plan[node.id] = env_vars
-        image_name = fetch_image_name(node)
+        image_name = node.resolve_runtime() or ""
 
         if not inject_env:
             continue

@@ -13,6 +13,13 @@ class ServerStatus(str, Enum):
     OFFLINE = "offline"
     UNKNOWN = "unknown"
 
+    @classmethod
+    def from_str(cls, value: str) -> "ServerStatus":
+        try:
+            return cls(value)
+        except ValueError:
+            return cls.UNKNOWN
+
 
 @dataclass
 class ManagedServer:
@@ -21,15 +28,8 @@ class ManagedServer:
     capacity: dict
     labels: List[str] = field(default_factory=list)
     current_load: float = 0.0
-    status: str = "unknown"
+    status: ServerStatus = ServerStatus.UNKNOWN
     running_nodes: List[str] = field(default_factory=list)
-
-    @property
-    def server_status(self) -> ServerStatus:
-        try:
-            return ServerStatus(self.status)
-        except ValueError:
-            return ServerStatus.UNKNOWN
 
 
 INVENTORY_PATH = Path(__file__).parent / "config" / "server_inventory.json"
@@ -38,10 +38,15 @@ INVENTORY_PATH = Path(__file__).parent / "config" / "server_inventory.json"
 def load_inventory(path: Optional[Path] = None) -> List[ManagedServer]:
     """Load server inventory from JSON config file."""
     inventory_path = path or INVENTORY_PATH
-    if not inventory_path.exists():
+    try:
+        data = json.loads(inventory_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
         return []
-    data = json.loads(inventory_path.read_text())
-    return [ManagedServer(**s) for s in data]
+    servers = []
+    for entry in data:
+        entry["status"] = ServerStatus.from_str(entry.get("status", "unknown"))
+        servers.append(ManagedServer(**entry))
+    return servers
 
 
 def get_available_servers(
@@ -53,7 +58,7 @@ def get_available_servers(
     available = [
         s
         for s in servers
-        if s.server_status in (ServerStatus.HEALTHY, ServerStatus.UNKNOWN)
+        if s.status in (ServerStatus.HEALTHY, ServerStatus.UNKNOWN)
     ]
     if required_labels:
         available = [

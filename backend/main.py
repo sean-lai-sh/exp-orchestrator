@@ -58,7 +58,10 @@ async def deploy_and_execute(payload: DeployWorkflow):
                 },
             )
 
-        execution_result = execute_dag(deploy_result, payload.nodes)
+        approved_images = {
+            details["image"] for details in image_results.values() if details["approved"]
+        }
+        execution_result = execute_dag(deploy_result, payload.nodes, approved_images)
         return {
             "message": "Deploy plan generated and executed",
             "deploy_result": deploy_result,
@@ -95,7 +98,7 @@ async def upload_plugin(file: UploadFile) -> ValidationResult:
 async def corelink_health():
     """Check Corelink server health."""
     report = await check_corelink_health()
-    return {"status": report.status.value, "latency_ms": report.latency_ms, "error": report.error}
+    return report.to_dict()
 
 
 @app.get("/inventory")
@@ -118,9 +121,5 @@ async def deploy_with_allocation(payload: DeployWorkflow, inject_env: bool = Fal
     allocation = allocate_nodes(result["queued_plugins"], node_requirements, health)
 
     result["allocation"] = [asdict(d) for d in allocation]
-    result["corelink_health"] = {
-        "status": health.status.value,
-        "latency_ms": health.latency_ms,
-        "error": health.error,
-    }
+    result["corelink_health"] = health.to_dict()
     return {"message": "Deploy plan with allocation generated", **result}

@@ -6,7 +6,7 @@ import ssl
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 try:
     import websockets
@@ -29,6 +29,9 @@ class HealthReport:
     status: CorelinkStatus
     latency_ms: Optional[float] = None
     error: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"status": self.status.value, "latency_ms": self.latency_ms, "error": self.error}
 
 
 async def check_corelink_health(timeout: float = 5.0) -> HealthReport:
