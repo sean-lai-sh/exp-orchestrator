@@ -41,6 +41,8 @@ import PluginNode from '../nodes/PluginNode';
 import type { NodeType, EditableNodeData, NodeTemplate, SenderNodeData, ReceiverNodeData, PluginNodeData } from '../../lib/types';
 import { AnimatedSVGEdge } from './AnimatedSVGEdge';
 import ComponentPanel from '../ui/ComponentPanel';
+import { toast } from 'sonner';
+import { buildDeployWorkflow } from '../../lib/deploy-types';
 
 // Helper to generate default node data for each type
 function getDefaultNodeData(type: NodeType, id: string, template?: NodeTemplate): EditableNodeData {
@@ -416,59 +418,54 @@ function FlowContent() {
   }, []);
 
   // Deploy handler
-  const handleDeploy = useCallback(() => {
+  const handleDeploy = useCallback(async () => {
     setIsDeploying(true);
     setDeployAnimationActive(true);
     setShowCheckmark(false);
-    const MIN_DURATION = 1500; // ms
+    const MIN_DURATION = 1500;
     const start = Date.now();
-    let deployFinished = false;
-    let animationFinished = false;
 
-    // When both deploy and animation are done, show checkmark
-    function maybeFinish() {
-      if (deployFinished && animationFinished) {
+    try {
+      const payload = buildDeployWorkflow(nodes, edges);
+      const res = await fetch('/api/deploy?inject_env=true', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        if (res.status === 422 && Array.isArray(data.detail)) {
+          const messages = data.detail.map(
+            (e: { loc: (string | number)[]; msg: string }) => `${e.loc.join('.')}: ${e.msg}`
+          );
+          toast.error('Validation failed', { description: messages.join('\n') });
+        } else {
+          toast.error('Deploy failed', {
+            description: typeof data.detail === 'string' ? data.detail : `Server error (${res.status})`,
+          });
+        }
+      } else {
+        toast.success('Deploy plan generated', {
+          description: `${data.node_count} nodes, ${data.edge_count} edges queued`,
+        });
+      }
+    } catch {
+      toast.error('Deploy failed', { description: 'Could not reach the backend server' });
+    } finally {
+      const elapsed = Date.now() - start;
+      const remaining = Math.max(0, MIN_DURATION - elapsed);
+      setTimeout(() => {
         setShowCheckmark(true);
         setTimeout(() => {
           setDeployAnimationActive(false);
           setIsDeploying(false);
           setShowDeployConfirm(false);
           setShowCheckmark(false);
-        }, 1000); // Show checkmark for 1s
-      }
+        }, 1000);
+      }, remaining);
     }
-
-    // Animate progress bar using Framer Motion
-    // (No need to manage progress state, just let motion.div animate width)
-    // We'll use a key on the overlay to force remount/animate each deploy
-
-    const payload = {
-      nodes,
-      edges,
-    };
-    fetch('/deploy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        console.log('Deploy response:', data);
-        // Optionally, show a toast or alert here
-      })
-      .catch((err) => {
-        console.error('Deploy error:', err);
-      })
-      .finally(() => {
-        deployFinished = true;
-        maybeFinish();
-      });
-
-    // Animation timer for progress bar
-    setTimeout(() => {
-      animationFinished = true;
-      maybeFinish();
-    }, MIN_DURATION);
   }, [nodes, edges]);
 
   // Handler for Deploy button click (shows confirm modal)

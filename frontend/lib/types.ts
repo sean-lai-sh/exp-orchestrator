@@ -36,6 +36,7 @@ export interface EditableNodeData {
   };
   nodeType: NodeType;
   sources?: string[];
+  runtime?: string;
   [key: string]: any; // Allow other properties, common for node data
 }
 

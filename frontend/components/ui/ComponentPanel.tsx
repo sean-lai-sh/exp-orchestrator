@@ -144,7 +144,7 @@ export default function ComponentPanel({
   // Get all custom properties (non-standard fields)
   const getCustomProperties = () => {
     if (!formData) return {};
-    const standardFields = ['name', 'description', 'token', 'access_types', 'nodeType', 'sources'];
+    const standardFields = ['name', 'description', 'token', 'access_types', 'nodeType', 'sources', 'runtime'];
     return Object.keys(formData).reduce((acc, key) => {
       if (!standardFields.includes(key)) {
         acc[key] = formData[key as keyof EditableNodeData];
@@ -219,6 +219,20 @@ export default function ComponentPanel({
                   rows={3}
                 />
               </div>
+
+              {/* Runtime Image - only for plugin nodes */}
+              {nodeType === 'plugin' && (
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Runtime Image</label>
+                  <Input
+                    type="text"
+                    name="runtime"
+                    value={formData.runtime || ''}
+                    onChange={handleInputChange}
+                    placeholder="e.g., my-plugin:latest"
+                  />
+                </div>
+              )}
 
               {/* Sources for sender/receiver/plugin nodes */}
               {(nodeType === 'sender' || nodeType === 'receiver' || nodeType === 'plugin') && (
