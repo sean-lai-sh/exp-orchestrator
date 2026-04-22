@@ -57,10 +57,40 @@ A visual orchestration tool built with React, React Flow, and FastAPI for deploy
 ---
 
 ## Quick Start
-1. Install dependencies: `npm install` (frontend) and `pip install fastapi` (backend).
-2. Run the frontend: `npm run dev`.
-3. Run the backend: `uvicorn main:app --reload` (assuming your FastAPI app is in `main.py`).
-4. Open the app in your browser and start building flows!
+
+### 1. Environment setup
+
+Copy the example env files and fill in your values:
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
+```
+
+At minimum you need `NEXT_PUBLIC_LIVEBLOCK_API_KEY` for the frontend. All other vars have sensible defaults or are optional.
+
+See each `.env.example` for documentation on every variable.
+
+### 2. Backend
+
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+```
+
+### 3. Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### 4. Open the app
+
+Visit `http://localhost:3000` and start building flows.
 
 ---
 
