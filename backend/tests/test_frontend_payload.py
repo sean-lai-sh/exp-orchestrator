@@ -1,7 +1,5 @@
 """Contract tests: verify the backend accepts payloads shaped exactly like the frontend produces."""
 
-import pytest
-
 import deployment
 from workflow_types import DeployWorkflow
 
