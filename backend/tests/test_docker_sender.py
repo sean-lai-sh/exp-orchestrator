@@ -2,8 +2,7 @@
 
 These tests import the sender's FastAPI app directly (without Docker) to
 validate the HTTP contract and env-var parsing logic in a fast, dependency-free
-way.  Full Docker build / run smoke tests are handled in CI via the
-``test-sender-docker-build`` workflow job.
+way.
 """
 
 from __future__ import annotations
@@ -24,38 +23,42 @@ def _make_client(env: dict[str, str] | None = None) -> TestClient:
     We reload the module each time so that module-level env reads pick up the
     monkeypatched values.
     """
-    import importlib
+    import importlib.util
     import sys
 
-    # Patch os.environ before import
-    for k, v in (env or {}).items():
-        os.environ[k] = v
+    _original_env = os.environ.copy()
+    try:
+        # Patch os.environ before import
+        for k, v in (env or {}).items():
+            os.environ[k] = v
 
-    # Force re-import so module-level constants are re-evaluated
-    if "docker_images.test_sender.main" in sys.modules:
-        del sys.modules["docker_images.test_sender.main"]
+        # Force re-import so module-level constants are re-evaluated
+        if "docker_images.test_sender.main" in sys.modules:
+            del sys.modules["docker_images.test_sender.main"]
 
-    # Add docker_images to path if needed
-    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    sender_dir = os.path.join(repo_root, "docker_images", "test_sender")
-    if sender_dir not in sys.path:
-        sys.path.insert(0, sender_dir)
+        # Add docker_images to path if needed
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        sender_dir = os.path.join(repo_root, "docker_images", "test_sender")
+        if sender_dir not in sys.path:
+            sys.path.insert(0, sender_dir)
 
-    if "main" in sys.modules:
-        # Avoid collision with backend/main.py
-        del sys.modules["main"]
+        if "main" in sys.modules:
+            # Avoid collision with backend/main.py
+            del sys.modules["main"]
 
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "test_sender_main",
-        os.path.join(sender_dir, "main.py"),
-    )
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
+        spec = importlib.util.spec_from_file_location(
+            "test_sender_main",
+            os.path.join(sender_dir, "main.py"),
+        )
+        assert spec is not None
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
 
-    return TestClient(module.app)
+        return TestClient(module.app)
+    finally:
+        os.environ.clear()
+        os.environ.update(_original_env)
 
 
 # ---------------------------------------------------------------------------

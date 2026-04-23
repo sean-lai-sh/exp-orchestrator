@@ -46,7 +46,12 @@ async def search_images(query: str, page: int = 1, page_size: int = 20) -> dict:
 
     for result in data.get("results", []):
         repo_name: str = result.get("repo_name", "")
-        result["approved"] = is_approved(repo_name)
+        # Docker Hub returns bare names ("nginx") or "library/nginx" for official images.
+        # Normalize to the form used in the allowlist ("nginx:latest").
+        normalized = repo_name.removeprefix("library/")
+        if ":" not in normalized:
+            normalized = f"{normalized}:latest"
+        result["approved"] = is_approved(normalized)
 
     return data
 
