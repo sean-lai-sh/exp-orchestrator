@@ -7,6 +7,7 @@ from dataclasses import asdict
 from fastapi import FastAPI, HTTPException, UploadFile
 
 from allowlist import check_workflow_images
+from dockerhub import get_image_tags, search_images
 from allocator import allocate_nodes
 from corelink_health import check_corelink_health
 from deployment import deploy
@@ -112,6 +113,24 @@ async def readiness():
             detail={"status": "not_ready", "checks": checks},
         )
     return {"status": "ready", "checks": checks}
+
+
+@app.get("/dockerhub/search")
+async def dockerhub_search(query: str, page: int = 1, page_size: int = 20):
+    """Search Docker Hub and annotate results with allowlist approval status."""
+    try:
+        return await search_images(query, page=page, page_size=page_size)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Docker Hub search failed: {exc}") from exc
+
+
+@app.get("/dockerhub/tags/{namespace}/{repo}")
+async def dockerhub_tags(namespace: str, repo: str, page: int = 1):
+    """Return paginated tags for a Docker Hub image."""
+    try:
+        return await get_image_tags(namespace, repo, page=page)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Docker Hub tags fetch failed: {exc}") from exc
 
 
 @app.get("/health/corelink")
