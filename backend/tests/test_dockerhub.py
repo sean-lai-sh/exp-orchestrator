@@ -48,11 +48,13 @@ async def test_search_images_returns_annotated_results(
     _write_allowlist(allowlist_path, {"nginx:latest": {"approved": True}})
     monkeypatch.setattr(allowlist, "ALLOWLIST_PATH", allowlist_path)
 
+    # Real Docker Hub v2 search API returns bare repo names, no tags.
+    # Official images come back as "nginx" or "library/nginx", never "nginx:latest".
     fake_payload = {
         "count": 2,
         "results": [
-            {"repo_name": "nginx:latest", "description": "Official nginx"},
-            {"repo_name": "redis:latest", "description": "Official redis"},
+            {"repo_name": "nginx", "description": "Official nginx"},
+            {"repo_name": "redis", "description": "Official redis"},
         ],
     }
 
@@ -66,9 +68,11 @@ async def test_search_images_returns_annotated_results(
 
     assert result["count"] == 2
     results = result["results"]
-    nginx_result = next(r for r in results if r["repo_name"] == "nginx:latest")
-    redis_result = next(r for r in results if r["repo_name"] == "redis:latest")
+    nginx_result = next(r for r in results if r["repo_name"] == "nginx")
+    redis_result = next(r for r in results if r["repo_name"] == "redis")
+    # "nginx" normalises to "nginx:latest" which is in the allowlist above → approved
     assert nginx_result["approved"] is True
+    # "redis" normalises to "redis:latest" which is NOT in the allowlist → not approved
     assert redis_result["approved"] is False
 
 

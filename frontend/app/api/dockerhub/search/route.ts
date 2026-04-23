@@ -3,8 +3,7 @@
  *
  * GET /api/dockerhub/search?query=<term>&page=<n>&page_size=<n>
  *
- * Forwards the request to the Python backend which handles CORS, rate-limiting
- * concerns, and allowlist annotation.
+ * Forwards the request to the Python backend which handles CORS and allowlist annotation.
  */
 
 import { NextRequest, NextResponse } from 'next/server';

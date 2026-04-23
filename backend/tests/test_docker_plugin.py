@@ -2,8 +2,7 @@
 
 These tests import the plugin's FastAPI app directly (without Docker) to
 validate the HTTP contract, env-var parsing, and the transform function in a
-fast, dependency-free way.  Full Docker build / run smoke tests are handled in
-CI via the ``test-plugin-docker-build`` workflow job.
+fast, dependency-free way.
 """
 
 from __future__ import annotations
@@ -22,18 +21,23 @@ from fastapi.testclient import TestClient
 
 def _load_plugin_app(env: dict[str, str] | None = None):
     """Load the plugin app module with optional env overrides."""
-    for k, v in (env or {}).items():
-        os.environ[k] = v
+    _original_env = os.environ.copy()
+    try:
+        for k, v in (env or {}).items():
+            os.environ[k] = v
 
-    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    plugin_path = os.path.join(repo_root, "docker_images", "test_plugin", "main.py")
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        plugin_path = os.path.join(repo_root, "docker_images", "test_plugin", "main.py")
 
-    spec = importlib.util.spec_from_file_location("test_plugin_main", plugin_path)
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
-    return module
+        spec = importlib.util.spec_from_file_location("test_plugin_main", plugin_path)
+        assert spec is not None
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
+        return module
+    finally:
+        os.environ.clear()
+        os.environ.update(_original_env)
 
 
 # ---------------------------------------------------------------------------

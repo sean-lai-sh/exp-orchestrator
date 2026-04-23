@@ -89,6 +89,8 @@ function ApprovalBadge({ approved }: { approved: boolean }) {
 
 export default function DockerHubBrowser({ open, onClose, onSelect }: DockerHubBrowserProps) {
   const [query, setQuery] = useState('');
+  // debouncedQuery is what triggers network requests; query drives the input display only
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [images, setImages] = useState<DockerHubImage[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
@@ -104,35 +106,46 @@ export default function DockerHubBrowser({ open, onClose, onSelect }: DockerHubB
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Reset state when the sheet closes
+  // Reset all state when the sheet closes
   useEffect(() => {
     if (!open) {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
       setQuery('');
+      setDebouncedQuery('');
       setImages([]);
       setTotalCount(0);
       setPage(1);
+      setLoadingImages(false);
       setSelectedImage(null);
       setTags([]);
+      setLoadingTags(false);
       setImageError(null);
       setTagError(null);
+      setTagPage(1);
+      setTagTotalCount(0);
     }
   }, [open]);
 
-  // Debounced search
+  // Update query immediately for input display; delay the actual search trigger
   const handleQueryChange = useCallback((value: string) => {
     setQuery(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
+      setDebouncedQuery(value);
       setPage(1);
       setSelectedImage(null);
     }, 400);
   }, []);
 
-  // Fetch images whenever query or page changes
+  // Fetch images whenever debouncedQuery or page changes
   useEffect(() => {
-    if (!query.trim()) {
+    if (!debouncedQuery.trim()) {
       setImages([]);
       setTotalCount(0);
+      setLoadingImages(false);
       return;
     }
 
@@ -140,7 +153,7 @@ export default function DockerHubBrowser({ open, onClose, onSelect }: DockerHubB
     setLoadingImages(true);
     setImageError(null);
 
-    fetch(`/api/dockerhub/search?query=${encodeURIComponent(query)}&page=${page}`)
+    fetch(`/api/dockerhub/search?query=${encodeURIComponent(debouncedQuery)}&page=${page}`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -161,7 +174,7 @@ export default function DockerHubBrowser({ open, onClose, onSelect }: DockerHubB
     return () => {
       cancelled = true;
     };
-  }, [query, page]);
+  }, [debouncedQuery, page]);
 
   // Fetch tags when an image is selected
   useEffect(() => {
@@ -222,8 +235,11 @@ export default function DockerHubBrowser({ open, onClose, onSelect }: DockerHubB
   const handleSelectTag = useCallback(
     (tag: DockerHubTag) => {
       if (!selectedImage) return;
-      const imageRef = `${selectedImage.repo_name}:${tag.name}`;
-      onSelect(imageRef);
+      // Strip "library/" prefix — official image refs in Docker are plain "nginx:tag", not "library/nginx:tag"
+      const repoName = selectedImage.repo_name.startsWith('library/')
+        ? selectedImage.repo_name.slice('library/'.length)
+        : selectedImage.repo_name;
+      onSelect(`${repoName}:${tag.name}`);
       onClose();
     },
     [selectedImage, onSelect, onClose],
@@ -345,7 +361,7 @@ export default function DockerHubBrowser({ open, onClose, onSelect }: DockerHubB
           ) : (
             /* Image search results */
             <div className="space-y-2">
-              {loadingImages && (
+              {(loadingImages || (query.trim() && query !== debouncedQuery)) && (
                 <div className="flex items-center justify-center py-8 text-slate-500">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Searching…
@@ -358,8 +374,8 @@ export default function DockerHubBrowser({ open, onClose, onSelect }: DockerHubB
                 </div>
               )}
 
-              {!loadingImages && !imageError && query && images.length === 0 && (
-                <div className="py-6 text-center text-sm text-slate-500">No images found for "{query}".</div>
+              {!loadingImages && !imageError && debouncedQuery && images.length === 0 && (
+                <div className="py-6 text-center text-sm text-slate-500">No images found for "{debouncedQuery}".</div>
               )}
 
               {!query && (
