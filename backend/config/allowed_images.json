@@ -1,1 +1,14 @@
-{}
+{
+  "test-sender:latest": {
+    "approved": true,
+    "notes": "Dockerized test sender for DAG integration tests (issue #34)"
+  },
+  "test-receiver:latest": {
+    "approved": true,
+    "notes": "Dockerized test receiver for DAG integration tests (issue #35)"
+  },
+  "test-plugin:latest": {
+    "approved": true,
+    "notes": "Dockerized test plugin for DAG integration tests (issue #36)"
+  }
+}
