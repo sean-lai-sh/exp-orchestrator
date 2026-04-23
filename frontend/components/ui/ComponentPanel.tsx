@@ -20,6 +20,7 @@ import type { EditableNodeData } from '@/lib/types';
 import { getSourceColors } from '@/lib/sourceColors';
 import { getEdgeStreamType, getNodeRuntime } from '@/lib/workflow-validation';
 import SecureTokenDisplay from './SecureTokenDisplay';
+import DockerHubBrowser from './DockerHubBrowser';
 
 function generateToken() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -70,6 +71,7 @@ export default function ComponentPanel({
   const [basePropsOpen, setBasePropsOpen] = useState(true);
   const [customPropsOpen, setCustomPropsOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [dockerHubOpen, setDockerHubOpen] = useState(false);
 
   const autoApplyChanges = useCallback((newData: Partial<EditableNodeData>) => {
     if (selectedNode) {
@@ -341,11 +343,32 @@ export default function ComponentPanel({
                     Runtime image
                     {!getNodeRuntime({ ...selectedNode, data: formData as EditableNodeData }) && <span className="h-2 w-2 rounded-full bg-red-500" />}
                   </label>
-                  <Input
-                    name="runtime"
-                    value={typeof formData.runtime === 'string' ? formData.runtime : typeof formData.containerImage === 'string' ? formData.containerImage : ''}
-                    onChange={handleInputChange}
-                    placeholder="e.g. ghcr.io/org/plugin:latest"
+                  <div className="flex gap-2">
+                    <Input
+                      name="runtime"
+                      value={typeof formData.runtime === 'string' ? formData.runtime : typeof formData.containerImage === 'string' ? formData.containerImage : ''}
+                      onChange={handleInputChange}
+                      placeholder="e.g. ghcr.io/org/plugin:latest"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDockerHubOpen(true)}
+                      title="Browse Docker Hub"
+                    >
+                      Browse
+                    </Button>
+                  </div>
+                  <DockerHubBrowser
+                    open={dockerHubOpen}
+                    onClose={() => setDockerHubOpen(false)}
+                    onSelect={(imageRef) => {
+                      const newData = { runtime: imageRef };
+                      setFormData((current) => ({ ...current, ...newData }));
+                      autoApplyChanges(newData);
+                    }}
                   />
                 </div>
               )}
