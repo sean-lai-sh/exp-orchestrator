@@ -27,6 +27,8 @@ def _make_client(env: dict[str, str] | None = None) -> TestClient:
     import sys
 
     _original_env = os.environ.copy()
+    _original_path = list(sys.path)
+    _saved_main = sys.modules.get("main")
     try:
         # Patch os.environ before import
         for k, v in (env or {}).items():
@@ -43,7 +45,6 @@ def _make_client(env: dict[str, str] | None = None) -> TestClient:
             sys.path.insert(0, sender_dir)
 
         if "main" in sys.modules:
-            # Avoid collision with backend/main.py
             del sys.modules["main"]
 
         spec = importlib.util.spec_from_file_location(
@@ -59,6 +60,11 @@ def _make_client(env: dict[str, str] | None = None) -> TestClient:
     finally:
         os.environ.clear()
         os.environ.update(_original_env)
+        sys.path[:] = _original_path
+        if _saved_main is not None:
+            sys.modules["main"] = _saved_main
+        elif "main" in sys.modules:
+            del sys.modules["main"]
 
 
 # ---------------------------------------------------------------------------

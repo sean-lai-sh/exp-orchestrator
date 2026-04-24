@@ -30,10 +30,12 @@ export async function GET(request: NextRequest) {
 
     const res = await fetch(upstream.toString(), { cache: 'no-store' });
     if (!res.ok) {
-      return NextResponse.json(
-        { error: `Backend returned ${res.status}` },
-        { status: 502 },
-      );
+      const body = await res.text();
+      const contentType = res.headers.get('content-type');
+      return new NextResponse(body, {
+        status: res.status,
+        headers: contentType ? { 'content-type': contentType } : undefined,
+      });
     }
 
     const data = await res.json();
