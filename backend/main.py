@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
@@ -11,6 +12,7 @@ from corelink_health import check_corelink_health
 from deployment import deploy
 from executor import execute_dag
 from executors import ContainerSpec, get_executor
+from health import check_docker
 from inventory import load_inventory
 from plugin_validation import ValidationResult, registry_login, validate_plugin_upload
 from workflow_types import DeployWorkflow
@@ -90,6 +92,26 @@ async def upload_plugin(file: UploadFile) -> ValidationResult:
     if not result.valid:
         raise HTTPException(status_code=422, detail=result.errors)
     return result
+
+
+@app.get("/health")
+async def health():
+    """Liveness probe. Returns 200 if the process can serve requests."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def readiness():
+    """Readiness probe. Verifies downstream dependencies are reachable."""
+    docker = await asyncio.to_thread(check_docker)
+    checks = {"docker": {"ok": docker.ok, "error": docker.error}}
+    ready = all(c["ok"] for c in checks.values())
+    if not ready:
+        raise HTTPException(
+            status_code=503,
+            detail={"status": "not_ready", "checks": checks},
+        )
+    return {"status": "ready", "checks": checks}
 
 
 @app.get("/health/corelink")
