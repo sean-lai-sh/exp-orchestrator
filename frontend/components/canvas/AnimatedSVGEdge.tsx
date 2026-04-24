@@ -28,34 +28,53 @@ export function AnimatedSVGEdge({
       : 'json';
   const isInvalid = Boolean(data?.invalid);
   const strokeColor = isInvalid
-    ? '#dc2626'
+    ? '#f87171'
     : typeof data?.color === 'string'
       ? data.color
-      : '#2563eb';
+      : '#00d4ff';
   const markerId = `arrowhead-${id}`;
+  const glowId = `glow-${id}`;
 
   return (
     <>
       <defs>
         <marker
           id={markerId}
-          markerWidth="12"
-          markerHeight="12"
+          markerWidth="10"
+          markerHeight="10"
           viewBox="-10 -10 20 20"
           orient="auto-start-reverse"
           refX="0"
           refY="0"
         >
           <polyline
-            points="-5,-4 0,0 -5,4"
+            points="-4,-3 0,0 -4,3"
             stroke={strokeColor}
-            strokeWidth="2"
+            strokeWidth="1.5"
             fill="none"
             strokeLinecap="round"
             strokeLinejoin="round"
+            opacity="0.8"
           />
         </marker>
+        <filter id={glowId}>
+          <feGaussianBlur stdDeviation="2" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
+
+      {/* Glow layer */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke={strokeColor}
+        strokeWidth="6"
+        strokeOpacity="0.08"
+        strokeLinecap="round"
+      />
 
       <BaseEdge
         id={id}
@@ -63,29 +82,39 @@ export function AnimatedSVGEdge({
         markerEnd={`url(#${markerId})`}
         style={{
           stroke: strokeColor,
-          strokeWidth: isInvalid ? 2.5 : 2,
+          strokeWidth: isInvalid ? 2 : 1.5,
           strokeDasharray: isInvalid ? '8 6' : undefined,
+          strokeOpacity: 0.7,
+          strokeLinecap: 'round',
         }}
       />
 
-      <circle r="3" fill={strokeColor}>
-        <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} />
+      {/* Animated traversing dot */}
+      <circle r="2.5" fill={strokeColor} filter={`url(#${glowId})`}>
+        <animateMotion dur="2.5s" repeatCount="indefinite" path={edgePath} />
+      </circle>
+
+      {/* Second trailing dot for depth */}
+      <circle r="1.5" fill={strokeColor} opacity="0.4">
+        <animateMotion dur="2.5s" repeatCount="indefinite" path={edgePath} begin="0.4s" />
       </circle>
 
       <foreignObject
-        width="120"
-        height="28"
-        x={labelX - 60}
-        y={labelY - 14}
+        width="80"
+        height="24"
+        x={labelX - 40}
+        y={labelY - 12}
         requiredExtensions="http://www.w3.org/1999/xhtml"
       >
-        <div className="flex h-7 items-center justify-center">
+        <div className="flex h-6 items-center justify-center">
           <span
-            className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide shadow-sm ${
-              isInvalid
-                ? 'border-red-200 bg-red-50 text-red-700'
-                : 'border-slate-200 bg-white text-slate-600'
-            }`}
+            className="inline-flex rounded-full px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider"
+            style={{
+              background: isInvalid ? 'rgba(248,113,113,0.12)' : 'rgba(255,255,255,0.04)',
+              color: isInvalid ? '#f87171' : 'hsl(220 10% 45%)',
+              border: `1px solid ${isInvalid ? 'rgba(248,113,113,0.2)' : 'rgba(255,255,255,0.06)'}`,
+              backdropFilter: 'blur(8px)',
+            }}
           >
             {streamLabel}
           </span>

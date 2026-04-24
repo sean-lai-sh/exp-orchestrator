@@ -4,6 +4,8 @@ import { ChangeEvent } from 'react';
 import { Puzzle } from 'lucide-react';
 import { getSourceColor } from '../../lib/sourceColors';
 
+const ACCENT = '#fbbf24';
+
 const PluginNode = (props: BaseNodeProps) => {
   const { id, data, setNodes, isConnectable } = props;
   const sources = data.sources || [];
@@ -23,61 +25,67 @@ const PluginNode = (props: BaseNodeProps) => {
   };
 
   return (
-    <BaseNode {...props} color="bg-purple-100" shapeClass="rounded-lg border-purple-400 border-2">
+    <BaseNode {...props} glowClass="node-glow-plugin" accentColor={ACCENT}>
       <div className="flex items-center gap-2 mb-2">
-        <Puzzle className="text-purple-600 h-4 w-4" />
-        <span className="font-semibold text-purple-700">Plugin</span>
+        <div className="flex items-center justify-center w-6 h-6 rounded-md" style={{ background: `${ACCENT}18` }}>
+          <Puzzle className="h-3.5 w-3.5" style={{ color: ACCENT }} />
+        </div>
+        <div>
+          <span className="font-semibold text-sm" style={{ color: ACCENT }}>Plugin</span>
+          <span className="text-[10px] text-[hsl(220_10%_45%)] ml-2 font-mono uppercase tracking-wider">
+            {sources.length > 0 ? `${sources.length} out` : 'transform'}
+          </span>
+        </div>
       </div>
-      
+
       <input
         type="text"
         name="name"
         value={data.name}
         onChange={handleInputChange}
-        className="p-1 border border-gray-300 rounded-md text-sm w-full mb-1"
+        className="w-full px-2 py-1 text-xs rounded-md border bg-[hsl(240_8%_8%)] border-[hsl(240_6%_20%)] text-[hsl(220_10%_85%)] placeholder:text-[hsl(220_10%_30%)] focus:outline-none focus:border-[#fbbf24] focus:ring-1 focus:ring-[#fbbf24]/30 transition-colors mb-1.5"
         placeholder="Enter name"
       />
-      
-      <div className="text-xs text-purple-800 mb-1">
-        Outputs: {sources.length > 0 ? `${sources.length} available` : 'Basic processing'}
-      </div>
-      
-      <ul className="text-xs text-purple-900 max-h-12 overflow-y-auto mb-2">
+
+      <ul className="text-[11px] text-[hsl(220_10%_45%)] max-h-12 overflow-y-auto space-y-0.5 mb-1.5">
         {sources.length === 0 ? (
-          <li className="italic text-purple-400">Standard output</li>
+          <li className="italic text-[hsl(220_10%_30%)]">Standard output</li>
         ) : (
           sources.map((src: string, i: number) => (
-            <li key={i} className="truncate">• {src.replace(/_/g, ' ')}</li>
+            <li key={i} className="truncate flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: getSourceColor(i) }} />
+              {src.replace(/_/g, ' ')}
+            </li>
           ))
         )}
       </ul>
-      
+
       <textarea
         name="description"
         value={data.description || ''}
         onChange={handleInputChange}
-        className="p-1 border border-gray-300 rounded-md text-sm w-full h-8 resize-none text-xs"
+        className="w-full px-2 py-1 text-[11px] rounded-md border bg-[hsl(240_8%_8%)] border-[hsl(240_6%_20%)] text-[hsl(220_10%_70%)] placeholder:text-[hsl(220_10%_30%)] focus:outline-none focus:border-[#fbbf24] focus:ring-1 focus:ring-[#fbbf24]/30 resize-none h-7 transition-colors"
         placeholder="Description..."
       />
-      
-      {/* Input handle - show if can receive */}
+
       {canReceive && (
-        <Handle 
-          type="target" 
-          position={Position.Left} 
+        <Handle
+          type="target"
+          position={Position.Left}
           isConnectable={isConnectable}
-          style={{ 
-            background: '#8b5cf6',
-            border: '2px solid #7c3aed',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-            left: '-8px',
+          style={{
+            background: ACCENT,
+            border: `2px solid hsl(240 8% 11%)`,
+            boxShadow: `0 0 8px ${ACCENT}60`,
+            width: 10,
+            height: 10,
+            left: '-5px',
             top: '50%',
             transform: 'translateY(-50%)'
           }}
         />
       )}
-      
-      {/* Output handles - create multiple based on sources */}
+
       {canSend && (
         sources.length > 0 ? (
           sources.map((source: string, index: number) => (
@@ -87,27 +95,30 @@ const PluginNode = (props: BaseNodeProps) => {
               position={Position.Right}
               id={source}
               isConnectable={isConnectable}
-              style={{ 
+              style={{
                 background: getSourceColor(index),
-                border: `2px solid ${getSourceColor(index)}`,
-                filter: 'brightness(1.1)',
-                boxShadow: `0 2px 6px ${getSourceColor(index)}40`,
-                right: '-8px',
+                border: `2px solid hsl(240 8% 11%)`,
+                boxShadow: `0 0 8px ${getSourceColor(index)}60`,
+                width: 10,
+                height: 10,
+                right: '-5px',
                 top: `${25 + (index * 12)}%`,
                 transform: 'translateY(-50%)'
               }}
             />
           ))
         ) : (
-          <Handle 
-            type="source" 
-            position={Position.Right} 
+          <Handle
+            type="source"
+            position={Position.Right}
             isConnectable={isConnectable}
-            style={{ 
-              background: '#8b5cf6',
-              border: '2px solid #7c3aed',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              right: '-8px',
+            style={{
+              background: ACCENT,
+              border: `2px solid hsl(240 8% 11%)`,
+              boxShadow: `0 0 8px ${ACCENT}60`,
+              width: 10,
+              height: 10,
+              right: '-5px',
               top: '50%',
               transform: 'translateY(-50%)'
             }}
@@ -118,4 +129,4 @@ const PluginNode = (props: BaseNodeProps) => {
   );
 };
 
-export default PluginNode; 
+export default PluginNode;

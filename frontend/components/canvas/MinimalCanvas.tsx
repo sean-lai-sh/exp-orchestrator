@@ -187,10 +187,10 @@ function FlowContent() {
     const sourceOutputs = sourceNode ? getNodeOutputTypes(sourceNode) : [];
     const streamType = sourceOutputs[0] || 'json';
 
-    let edgeColor = '#3b82f6';
+    let edgeColor = '#00d4ff';
     if (sourceNode?.data.sources && sourceHandleId !== 'default') {
       const sourceIndex = sourceNode.data.sources.findIndex((source: string) => source === sourceHandleId);
-      const palette = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#ec4899'];
+      const palette = ['#00d4ff', '#34d399', '#a78bfa', '#fbbf24', '#f87171', '#38bdf8', '#a3e635', '#f472b6'];
       if (sourceIndex >= 0) {
         edgeColor = palette[sourceIndex % palette.length];
       }
@@ -565,19 +565,27 @@ function FlowContent() {
   const canDeploy = analysisResult?.valid ?? false;
 
   return (
-    <div ref={reactFlowWrapper} className="relative h-screen w-screen bg-slate-100">
+    <div ref={reactFlowWrapper} className="relative h-screen w-screen" style={{ background: 'hsl(240 10% 5%)' }}>
       {showDeployConfirm && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/35">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-slate-900">Deploy workflow</h2>
-            <p className="mt-2 text-sm text-slate-600">
+        <div className="absolute inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}>
+          <div className="w-full max-w-md rounded-2xl p-6" style={{ background: 'hsl(240 8% 9%)', border: '1px solid hsl(240 6% 18%)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
+            <h2 className="text-lg font-semibold" style={{ color: 'hsl(220 10% 92%)' }}>Deploy workflow</h2>
+            <p className="mt-2 text-sm" style={{ color: 'hsl(220 10% 50%)' }}>
               This runs a deployment dry run against the backend validation path and updates the analyzer state with the result.
             </p>
             <div className="mt-6 flex justify-end gap-3">
-              <button className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-700" onClick={() => setShowDeployConfirm(false)}>
+              <button
+                className="rounded-lg px-4 py-2 text-sm transition-colors"
+                style={{ border: '1px solid hsl(240 6% 20%)', color: 'hsl(220 10% 70%)', background: 'transparent' }}
+                onClick={() => setShowDeployConfirm(false)}
+              >
                 Cancel
               </button>
-              <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white" onClick={handleDeploy}>
+              <button
+                className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-all"
+                style={{ background: 'linear-gradient(135deg, #00d4ff, #0077ff)', boxShadow: '0 4px 16px rgba(0, 212, 255, 0.25)' }}
+                onClick={handleDeploy}
+              >
                 Confirm deploy
               </button>
             </div>
@@ -586,17 +594,25 @@ function FlowContent() {
       )}
 
       {showCleanConfirm && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/35">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-slate-900">Clean workflow layout</h2>
-            <p className="mt-2 text-sm text-slate-600">
+        <div className="absolute inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}>
+          <div className="w-full max-w-md rounded-2xl p-6" style={{ background: 'hsl(240 8% 9%)', border: '1px solid hsl(240 6% 18%)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
+            <h2 className="text-lg font-semibold" style={{ color: 'hsl(220 10% 92%)' }}>Clean workflow layout</h2>
+            <p className="mt-2 text-sm" style={{ color: 'hsl(220 10% 50%)' }}>
               Nodes will be reorganized according to the current data-flow depth so the DAG is easier to inspect and validate.
             </p>
             <div className="mt-6 flex justify-end gap-3">
-              <button className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-700" onClick={() => setShowCleanConfirm(false)}>
+              <button
+                className="rounded-lg px-4 py-2 text-sm transition-colors"
+                style={{ border: '1px solid hsl(240 6% 20%)', color: 'hsl(220 10% 70%)', background: 'transparent' }}
+                onClick={() => setShowCleanConfirm(false)}
+              >
                 Cancel
               </button>
-              <button className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white" onClick={handleCleanWorkflow}>
+              <button
+                className="rounded-lg px-4 py-2 text-sm font-medium transition-all"
+                style={{ background: '#fbbf24', color: 'hsl(240 10% 5%)', boxShadow: '0 4px 16px rgba(251, 191, 36, 0.2)' }}
+                onClick={handleCleanWorkflow}
+              >
                 Clean layout
               </button>
             </div>
@@ -604,7 +620,7 @@ function FlowContent() {
         </div>
       )}
 
-      <div className={(isDeploying || isCleaning) ? 'pointer-events-none select-none opacity-80' : ''}>
+      <div className={(isDeploying || isCleaning) ? 'pointer-events-none select-none opacity-60 blur-[1px]' : ''}>
         <CanvasPanel
           onAddNode={onAddNode}
           isSheetOpen={isLeftPanelOpen}
@@ -653,7 +669,7 @@ function FlowContent() {
                   Duplicate node
                 </ContextMenuItem>
                 <ContextMenuSeparator />
-                <ContextMenuItem className="text-red-600 focus:bg-red-50 focus:text-red-600" onClick={() => handleDeleteNode(contextMenuNode.id)}>
+                <ContextMenuItem className="text-red-400 focus:bg-red-500/10 focus:text-red-400" onClick={() => handleDeleteNode(contextMenuNode.id)}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete node
                 </ContextMenuItem>

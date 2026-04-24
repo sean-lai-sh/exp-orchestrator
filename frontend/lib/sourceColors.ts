@@ -1,15 +1,15 @@
-// Utility for generating consistent colors for sources
+// Luminous colors optimized for dark backgrounds
 export const sourceColors = [
-  '#3b82f6', // blue
-  '#10b981', // emerald 
-  '#8b5cf6', // violet
-  '#f59e0b', // amber
-  '#ef4444', // red
-  '#06b6d4', // cyan
-  '#84cc16', // lime
-  '#ec4899', // pink
-  '#6366f1', // indigo
-  '#14b8a6', // teal
+  '#00d4ff', // electric cyan
+  '#34d399', // emerald
+  '#a78bfa', // soft violet
+  '#fbbf24', // amber
+  '#f87171', // coral red
+  '#38bdf8', // sky blue
+  '#a3e635', // lime
+  '#f472b6', // pink
+  '#818cf8', // indigo
+  '#2dd4bf', // teal
 ];
 
 export function getSourceColor(index: number): string {

@@ -37,11 +37,14 @@ export default function SecureTokenDisplay({ token, label }: SecureTokenDisplayP
 
   return (
     <div>
-      {label && <div className="font-semibold text-gray-700 mb-1 mt-2">{label}</div>} {/* Added mt-2 for spacing similar to other labels */}
-      <div className="flex justify-between items-center gap-2 p-1 pl-2 border border-gray-300 rounded-md bg-gray-50">
-        <span 
+      {label && <div className="font-semibold mb-1 mt-2" style={{ color: 'hsl(220 10% 70%)' }}>{label}</div>}
+      <div
+        className="flex justify-between items-center gap-2 p-1 pl-2 rounded-lg"
+        style={{ background: 'hsl(240 8% 9%)', border: '1px solid hsl(240 6% 18%)' }}
+      >
+        <span
           className="w-full text-sm font-mono whitespace-nowrap tracking-tighter"
-          style={{ maxWidth: 'calc(100% - 70px)' }} // Adjust based on button sizes, assumes ~35px per button with gap
+          style={{ maxWidth: 'calc(100% - 70px)', color: 'hsl(220 10% 55%)' }}
         >
           {isTokenRevealed ? currentToken : formatAsterisks(currentToken?.length || 8)}
         </span>
