@@ -8,6 +8,12 @@ export async function GET() {
       signal: AbortSignal.timeout(5000),
     });
     const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return NextResponse.json(
+        { backend: 'unhealthy', backend_url: BACKEND_URL, corelink: data },
+        { status: 502 }
+      );
+    }
     return NextResponse.json({
       backend: 'reachable',
       backend_url: BACKEND_URL,

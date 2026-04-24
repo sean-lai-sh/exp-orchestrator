@@ -41,7 +41,8 @@ export async function POST(request: NextRequest) {
   }
 
   const injectEnv = request.nextUrl.searchParams.get('inject_env') === 'true';
-  const params = endpoint === '/deploy' ? `inject_env=${injectEnv}` : undefined;
+  const supportsInjectEnv = endpoint === '/deploy' || endpoint === '/deploy/plan';
+  const params = supportsInjectEnv ? `inject_env=${injectEnv}` : undefined;
 
   try {
     return await proxyToBackend(endpoint, body, params);
