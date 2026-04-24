@@ -9,6 +9,11 @@ const ENDPOINT_MAP: Record<string, string> = {
   'plan-with-allocation': '/deploy/plan',
 };
 
+// Backend endpoints that accept the `inject_env` query param.
+// `/deploy/execute` and `/deploy/check-images` do not — the backend hardcodes
+// or ignores env injection for those paths.
+const INJECT_ENV_ENDPOINTS = new Set(['/deploy', '/deploy/plan']);
+
 async function proxyToBackend(endpoint: string, body: unknown, params?: string) {
   const url = params ? `${BACKEND_URL}${endpoint}?${params}` : `${BACKEND_URL}${endpoint}`;
   const backendRes = await fetch(url, {
@@ -40,8 +45,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const injectEnv = request.nextUrl.searchParams.get('inject_env') === 'true';
-  const params = endpoint === '/deploy' ? `inject_env=${injectEnv}` : undefined;
+  const injectEnvParam = request.nextUrl.searchParams.get('inject_env');
+  const params =
+    injectEnvParam !== null && INJECT_ENV_ENDPOINTS.has(endpoint)
+      ? `inject_env=${injectEnvParam === 'true'}`
+      : undefined;
 
   try {
     return await proxyToBackend(endpoint, body, params);
