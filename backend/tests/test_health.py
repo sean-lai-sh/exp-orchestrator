@@ -10,13 +10,16 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import health
+import main
 from health import CheckResult, check_docker
 from main import app
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    # Keep TestClient lifespan from triggering a real `docker login` via
+    # registry_login() if registry env vars happen to be set in the environment.
+    monkeypatch.setattr(main, "registry_login", lambda: None)
     return TestClient(app)
 
 
@@ -27,11 +30,15 @@ class TestLivenessEndpoint:
         assert response.json() == {"status": "ok"}
 
     def test_does_not_depend_on_docker(self, client: TestClient) -> None:
-        with patch.object(
-            health, "check_docker", return_value=CheckResult(ok=False, error="nope")
-        ):
+        # /health must never probe Docker; any call here would indicate a regression.
+        sentinel = patch(
+            "main.check_docker",
+            side_effect=AssertionError("/health must not call check_docker"),
+        )
+        with sentinel:
             response = client.get("/health")
         assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
 
 
 class TestReadinessEndpoint:
@@ -102,3 +109,13 @@ class TestCheckDocker:
 
         assert result.ok is False
         assert "timed out" in result.error
+
+    def test_returns_error_on_permission_error(self) -> None:
+        with patch(
+            "health.subprocess.run",
+            side_effect=PermissionError(13, "Permission denied"),
+        ):
+            result = check_docker()
+
+        assert result.ok is False
+        assert "Permission denied" in result.error

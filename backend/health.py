@@ -26,6 +26,8 @@ def check_docker(timeout: float = 3.0) -> CheckResult:
         return CheckResult(ok=False, error="docker binary not found")
     except subprocess.TimeoutExpired:
         return CheckResult(ok=False, error="docker info timed out")
+    except OSError as exc:
+        return CheckResult(ok=False, error=str(exc) or "failed to execute docker info")
 
     if result.returncode == 0:
         return CheckResult(ok=True)

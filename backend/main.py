@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
@@ -102,7 +103,7 @@ async def health():
 @app.get("/health/ready")
 async def readiness():
     """Readiness probe. Verifies downstream dependencies are reachable."""
-    docker = check_docker()
+    docker = await asyncio.to_thread(check_docker)
     checks = {"docker": {"ok": docker.ok, "error": docker.error}}
     ready = all(c["ok"] for c in checks.values())
     if not ready:
