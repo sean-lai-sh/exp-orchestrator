@@ -48,6 +48,9 @@ jobs:
       - name: "[backend] Plugin upload validation"
         run: python -m pytest tests/test_plugin_validation.py -v
 
+      - name: "[backend] Health endpoints"
+        run: python -m pytest tests/test_health.py -v
+
   # ── Job 2: Reference plugin unit tests ────────────────────────────────────
   reference-plugin:
     name: Reference Plugin Tests
