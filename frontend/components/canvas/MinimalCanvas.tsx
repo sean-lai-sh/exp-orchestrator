@@ -20,6 +20,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Copy, Plus, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import CanvasPanel from '../ui/CanvasPanel';
 import AnalyzerPanel from '../ui/AnalyzerPanel';
 import {
@@ -44,6 +45,7 @@ import type {
 import { AnimatedSVGEdge } from './AnimatedSVGEdge';
 import { analyzeDAG, type AnalysisResult, type AnalyzerIssue } from '../../lib/dag-analyzer';
 import { getEdgeStreamType, getNodeOutputTypes } from '../../lib/workflow-validation';
+import { postDeploy, summarizeDeploySuccess } from '../../lib/deploy-client';
 
 function getDefaultNodeData(type: NodeType, template?: NodeTemplate): EditableNodeData {
   const baseToken = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-${Date.now()}`;
@@ -391,61 +393,45 @@ function FlowContent() {
     setIsValidatingBackend(true);
     setValidationMessage('Validating workflow with backend rules…');
 
-    try {
-      const response = await fetch('/api/deploy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes, edges, dryRun: true }),
-      });
-
-      const result = await response.json();
-      if (result.analysis) {
-        setAnalysisResult(result.analysis);
-      }
-
-      if (!response.ok) {
-        setValidationMessage(result.backendError || result.message || 'Backend validation failed.');
-        return;
-      }
-
-      const queuedPlugins = result.backendPlan?.queued_plugins?.length ?? 0;
-      setValidationMessage(`${result.message} Queued plugin deployments: ${queuedPlugins}.`);
-    } catch (error) {
-      setValidationMessage(error instanceof Error ? error.message : 'Backend validation failed.');
-    } finally {
-      setIsValidatingBackend(false);
+    const result = await postDeploy({ nodes, edges, dryRun: true });
+    if (result.analysis) {
+      setAnalysisResult(result.analysis);
     }
+
+    if (result.ok) {
+      const summary = summarizeDeploySuccess(result, 'validate');
+      setValidationMessage(summary);
+      toast.success('Backend validation passed', { description: summary });
+    } else {
+      setValidationMessage(result.message);
+      const title = result.kind === 'network' ? 'Backend unreachable' : 'Validation failed';
+      toast.error(title, { description: result.message });
+    }
+
+    setIsValidatingBackend(false);
   }, [edges, nodes]);
 
   const handleDeploy = useCallback(async () => {
     setIsDeploying(true);
     setValidationMessage('Running deploy dry run…');
 
-    try {
-      const response = await fetch('/api/deploy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes, edges }),
-      });
-
-      const result = await response.json();
-      if (result.analysis) {
-        setAnalysisResult(result.analysis);
-      }
-
-      if (!response.ok) {
-        setValidationMessage(result.backendError || result.message || 'Deployment dry run failed.');
-        return;
-      }
-
-      const orderedNodes = result.backendPlan?.topological_order?.length ?? 0;
-      setValidationMessage(`${result.message} Planned topological steps: ${orderedNodes}.`);
-      setShowDeployConfirm(false);
-    } catch (error) {
-      setValidationMessage(error instanceof Error ? error.message : 'Deployment dry run failed.');
-    } finally {
-      setIsDeploying(false);
+    const result = await postDeploy({ nodes, edges });
+    if (result.analysis) {
+      setAnalysisResult(result.analysis);
     }
+
+    if (result.ok) {
+      const summary = summarizeDeploySuccess(result, 'deploy');
+      setValidationMessage(summary);
+      toast.success('Deployment dry run succeeded', { description: summary });
+      setShowDeployConfirm(false);
+    } else {
+      setValidationMessage(result.message);
+      const title = result.kind === 'network' ? 'Backend unreachable' : 'Deployment failed';
+      toast.error(title, { description: result.message });
+    }
+
+    setIsDeploying(false);
   }, [edges, nodes]);
 
   useEffect(() => {
