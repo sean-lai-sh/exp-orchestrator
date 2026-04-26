@@ -52,6 +52,15 @@ const PluginNode = (props: BaseNodeProps) => {
         )}
       </ul>
       
+      <input
+        type="text"
+        name="containerImage"
+        value={data.containerImage || ''}
+        onChange={handleInputChange}
+        className="p-1 border border-gray-300 rounded-md text-sm w-full mb-1 font-mono text-xs bg-purple-50"
+        placeholder="Container image (e.g. my-plugin:latest)"
+      />
+
       <textarea
         name="description"
         value={data.description || ''}

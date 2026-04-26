@@ -49,6 +49,7 @@ export interface ReceiverNodeData extends EditableNodeData {
 }
 export interface PluginNodeData extends EditableNodeData {
   nodeType: 'plugin';
+  containerImage?: string;
 }
 
 // 2. Define the props our CustomEditableNode component receives.

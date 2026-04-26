@@ -86,6 +86,12 @@ def build_env_vars(node: DeployNode) -> Dict[str, str]:
     env_vars["NODE_ID"] = node.id
     env_vars["NODE_TYPE"] = node.type
 
+    # Inject Corelink connection credentials from the orchestrator environment
+    for corelink_key in ("CORELINK_HOST", "CORELINK_PORT", "CORELINK_USERNAME", "CORELINK_PASSWORD"):
+        val = os.environ.get(corelink_key)
+        if val:
+            env_vars[corelink_key] = val
+
     for stream_type, cred in node.in_creds.items():
         stream_key = _normalize_env_key(stream_type)
         env_vars[f"IN_{stream_key}_STREAM_ID"] = cred.stream_id
