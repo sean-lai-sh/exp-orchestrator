@@ -398,9 +398,18 @@ function FlowContent() {
     const successTitle = context === 'deploy' ? 'Deployment validated' : 'Workflow validated';
 
     switch (outcome.kind) {
-      case 'success':
-        toast.success(successTitle, { description: outcome.message });
+      case 'success': {
+        // Backend can return HTTP 200 with analysis.valid === false when the
+        // backend's own validator passed but the frontend analyzer still has
+        // blockers/warnings. Don't claim success in that case.
+        const analyzerValid = outcome.analysis?.valid ?? true;
+        if (analyzerValid) {
+          toast.success(successTitle, { description: outcome.message });
+        } else {
+          toast.warning('Validation incomplete', { description: outcome.message });
+        }
         return;
+      }
       case 'validation_error':
         toast.error('Workflow validation failed', { description: outcome.message });
         return;

@@ -61,6 +61,24 @@ describe('runDeploy', () => {
     expect(body.nodes).toHaveLength(1);
   });
 
+  it('returns success but exposes analysis.valid=false when the backend passes but the analyzer does not', async () => {
+    // The deploy route responds 200 in this case (see frontend/app/api/deploy/route.ts);
+    // the client must surface analysis.valid so callers can avoid a false success toast.
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({
+      success: true,
+      valid: false,
+      message: 'Backend validation passed, but the frontend analyzer still found deploy blockers or warnings.',
+      analysis: { valid: false, issues: [{ severity: 'error' }], stats: { errorCount: 1, readyToDeployCount: 0 } },
+      backendPlan: { topological_order: [], queued_plugins: [] },
+    }));
+
+    const outcome = await runDeploy({ nodes: nodes(), edges: edges(), fetchImpl });
+
+    expect(outcome.kind).toBe('success');
+    expect(outcome.ok).toBe(true);
+    expect(outcome.analysis?.valid).toBe(false);
+  });
+
   it('reports backend validation errors with the backend message', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({
       success: false,
