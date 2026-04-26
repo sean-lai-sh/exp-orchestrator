@@ -1,8 +1,8 @@
 'use client';
 
-import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, RefreshCw } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import type { AnalysisResult, AnalyzerIssue } from '@/lib/dag-analyzer';
 
 interface AnalyzerPanelProps {
@@ -70,7 +70,7 @@ export default function AnalyzerPanel({
       <DialogContent className="p-0">
         <div className="flex flex-col gap-4 p-6">
           <DialogHeader>
-            <div className="flex items-center justify-between pr-6">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {analysisResult?.valid ? (
                   <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -79,10 +79,18 @@ export default function AnalyzerPanel({
                 )}
                 <DialogTitle>DAG Analyzer</DialogTitle>
               </div>
-              <Button variant="outline" size="sm" onClick={onValidateWithBackend} disabled={isValidating}>
-                {isValidating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                Validate with Backend
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={onValidateWithBackend} disabled={isValidating}>
+                  {isValidating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                  Validate with Backend
+                </Button>
+                <DialogClose asChild>
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">Close</span>
+                  </Button>
+                </DialogClose>
+              </div>
             </div>
             <DialogDescription>
               Real-time deploy readiness based on cycle checks, connection rules, runtime status, and stream compatibility.
