@@ -129,6 +129,7 @@ function FlowContent() {
   const [isValidatingBackend, setIsValidatingBackend] = useState(false);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [focusedIssue, setFocusedIssue] = useState<AnalyzerIssue | null>(null);
+  const [isAnalyzerOpen, setIsAnalyzerOpen] = useState(false);
 
   const edgeReconnectSuccessful = useRef(true);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -611,6 +612,7 @@ function FlowContent() {
           setIsSheetOpen={setIsLeftPanelOpen}
           onDeploy={() => setShowDeployConfirm(true)}
           onValidateWithBackend={handleValidateWithBackend}
+          onOpenAnalyzer={() => setIsAnalyzerOpen(true)}
           isDeploying={isDeploying}
           isValidating={isValidatingBackend}
           onCleanWorkflow={() => setShowCleanConfirm(true)}
@@ -688,6 +690,8 @@ function FlowContent() {
         />
 
         <AnalyzerPanel
+          isOpen={isAnalyzerOpen}
+          onClose={() => setIsAnalyzerOpen(false)}
           analysisResult={analysisResult}
           isValidating={isValidatingBackend}
           validationMessage={validationMessage}

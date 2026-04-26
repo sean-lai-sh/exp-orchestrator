@@ -14,7 +14,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import type { NodeTemplate, NodeType } from '@/lib/types';
 import { nodeTemplates, templatesByType } from '@/lib/nodeTemplates';
-import { ChevronDown, Inbox, Keyboard, Puzzle, Search, Send, Sparkles } from 'lucide-react';
+import { BarChart2, ChevronDown, Inbox, Keyboard, Puzzle, Search, Send, Sparkles } from 'lucide-react';
 
 interface CanvasPanelProps {
   onAddNode: (type: NodeType, template?: NodeTemplate) => void;
@@ -22,6 +22,7 @@ interface CanvasPanelProps {
   setIsSheetOpen: (isOpen: boolean) => void;
   onDeploy: () => void;
   onValidateWithBackend: () => void;
+  onOpenAnalyzer: () => void;
   isDeploying: boolean;
   isValidating: boolean;
   onCleanWorkflow: () => void;
@@ -102,6 +103,7 @@ export default function CanvasPanel({
   setIsSheetOpen,
   onDeploy,
   onValidateWithBackend,
+  onOpenAnalyzer,
   isDeploying,
   isValidating,
   onCleanWorkflow,
@@ -260,6 +262,10 @@ export default function CanvasPanel({
             </p>
             <Button variant="outline" onClick={onValidateWithBackend} disabled={isValidating || isDeploying} className="w-full">
               {isValidating ? 'Validating…' : 'Validate with Backend'}
+            </Button>
+            <Button variant="outline" onClick={onOpenAnalyzer} className="w-full">
+              <BarChart2 className="mr-2 h-4 w-4" />
+              View Analysis
             </Button>
             <Button onClick={onDeploy} disabled={!canDeploy || isDeploying || isValidating} className="w-full">
               {isDeploying ? 'Deploying…' : canDeploy ? 'Deploy Workflow' : 'Resolve blockers before deploy'}
