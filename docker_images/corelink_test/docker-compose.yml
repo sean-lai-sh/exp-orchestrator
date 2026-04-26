@@ -1,0 +1,89 @@
+services:
+  corelink-server:
+    build:
+      context: ${CORELINK_SERVER_PATH:-../../corelink-server}
+      dockerfile_inline: |
+        FROM docker.io/node:16-bullseye
+        RUN apt-get update -y && apt-get install -y net-tools && rm -rf /var/lib/apt/lists/*
+        WORKDIR /app
+        COPY package.json /app/
+        RUN npm install
+        COPY config/ /app/config/
+        COPY knex/ /app/knex/
+        RUN touch /app/dockerlog
+        RUN mkdir -p /app/data
+        RUN cd /app/config && \
+            node ../node_modules/knex/bin/cli.js migrate:latest && \
+            node ../node_modules/knex/bin/cli.js seed:run
+        COPY logger.js /app/
+        COPY corelink.js /app/
+        EXPOSE 20010/tcp 20011/udp 20011/tcp 20012/tcp 20013/tcp
+        CMD ["node", "corelink.js"]
+    container_name: corelink-server
+    networks:
+      - corelink-net
+    ports:
+      - "20012:20012"
+      - "20013:20013"
+    volumes:
+      - ./certs/ca-crt.pem:/app/config/ca-crt.pem:ro
+      - ./certs/ca-key.pem:/app/config/ca-key.pem:ro
+      - ./certs/server-key.pem:/app/config/server-key.pem:ro
+      - ./certs/server-crt.pem:/app/config/server-crt.pem:ro
+      - ./server/default.json5:/app/config/default.json5:ro
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const n=require('net');const c=n.connect(20012,'127.0.0.1',()=>{c.destroy();process.exit(0)});c.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),3000)\""]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 15s
+
+  publisher:
+    build:
+      context: .
+      dockerfile: publisher/Dockerfile
+    container_name: corelink-publisher
+    depends_on:
+      corelink-server:
+        condition: service_healthy
+    networks:
+      - corelink-net
+    ports:
+      - "3010:3000"
+    volumes:
+      - ./certs:/app/certs:ro
+    environment:
+      - CORELINK_HOST=corelink-server
+      - CORELINK_PORT=20012
+      - CORELINK_USERNAME=admin
+      - CORELINK_PASSWORD=Testpassword
+      - NODE_ID=publisher-1
+      - OUT_JSON_WORKSPACE=test-workspace
+      - OUT_JSON_PROTOCOL=ws
+
+  subscriber:
+    build:
+      context: .
+      dockerfile: subscriber/Dockerfile
+    container_name: corelink-subscriber
+    depends_on:
+      corelink-server:
+        condition: service_healthy
+    networks:
+      - corelink-net
+    ports:
+      - "3011:3000"
+    volumes:
+      - ./certs:/app/certs:ro
+    environment:
+      - CORELINK_HOST=corelink-server
+      - CORELINK_PORT=20012
+      - CORELINK_USERNAME=Testuser
+      - CORELINK_PASSWORD=Testpassword
+      - NODE_ID=subscriber-1
+      - IN_JSON_WORKSPACE=test-workspace
+      - IN_JSON_PROTOCOL=ws
+
+networks:
+  corelink-net:
+    driver: bridge

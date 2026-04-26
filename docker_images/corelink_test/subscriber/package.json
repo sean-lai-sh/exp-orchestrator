@@ -1,0 +1,11 @@
+{
+  "name": "corelink-test-subscriber",
+  "version": "1.0.0",
+  "description": "Corelink test subscriber — connects, creates receiver, tracks incoming messages",
+  "main": "subscriber.js",
+  "dependencies": {
+    "websocket": "^1.0.34",
+    "werift": "^0.22.9",
+    "express": "^4.18.2"
+  }
+}
