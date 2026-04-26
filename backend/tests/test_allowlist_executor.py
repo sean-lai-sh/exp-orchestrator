@@ -131,7 +131,7 @@ def test_execute_dag_records_started_rejected_and_skipped_nodes(
     pulled_images: list[str] = []
     started_containers: list[tuple[str, str, dict[str, str], str | None]] = []
 
-    monkeypatch.setattr(executor, "is_approved", lambda image: image.startswith("approved/"))
+    monkeypatch.setattr(allowlist, "is_approved", lambda image, al=None: image.startswith("approved/"))
 
     def fake_pull_image(image_ref: str) -> bool:
         pulled_images.append(image_ref)
@@ -297,7 +297,7 @@ def test_execute_endpoint_returns_execution_summary(
     monkeypatch.setattr(
         main,
         "execute_dag",
-        lambda deploy_result, nodes: executor.ExecutionResult(
+        lambda deploy_result, nodes, approved_images=None: executor.ExecutionResult(
             fetched=["approved/plugin-a:1.0"],
             started=[
                 {

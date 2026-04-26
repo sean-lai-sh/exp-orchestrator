@@ -49,6 +49,13 @@ class DeployNode(BaseModel):
     env_vars: Dict[str, str] = Field(default_factory=dict)
     data: Dict[str, Any] = Field(default_factory=dict)
 
+    def resolve_runtime(self) -> Optional[str]:
+        """Resolve the container image reference for this node.
+
+        Priority: runtime field > data["runtime"] > data["containerImage"].
+        """
+        return self.runtime or self.data.get("runtime") or self.data.get("containerImage") or None
+
 
 class DeployEdge(BaseModel):
     source: str
