@@ -151,7 +151,7 @@ async def deploy_with_allocation(payload: DeployWorkflow, inject_env: bool = Fal
 
 @app.post("/deploy/execute/v2")
 async def deploy_and_execute_v2(
-    payload: DeployWorkflow, executor: str = "local", inject_env: bool = True
+    payload: DeployWorkflow, executor: str = "local", inject_env: bool = False
 ):
     """Plan deployment and execute containers via the pluggable executor abstraction."""
     try:
