@@ -20,6 +20,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Copy, Plus, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import CanvasPanel from '../ui/CanvasPanel';
 import AnalyzerPanel from '../ui/AnalyzerPanel';
 import {
@@ -43,6 +44,7 @@ import type {
 } from '../../lib/types';
 import { AnimatedSVGEdge } from './AnimatedSVGEdge';
 import { analyzeDAG, type AnalysisResult, type AnalyzerIssue } from '../../lib/dag-analyzer';
+import { runDeploy, type DeployOutcome } from '../../lib/deploy-client';
 import { getEdgeStreamType, getNodeOutputTypes } from '../../lib/workflow-validation';
 
 function getDefaultNodeData(type: NodeType, template?: NodeTemplate): EditableNodeData {
@@ -387,66 +389,55 @@ function FlowContent() {
     }, 650);
   }, [edges, nodes]);
 
+  const applyDeployOutcome = useCallback((outcome: DeployOutcome, context: 'validate' | 'deploy') => {
+    if (outcome.analysis) {
+      setAnalysisResult(outcome.analysis);
+    }
+    setValidationMessage(outcome.message);
+
+    const successTitle = context === 'deploy' ? 'Deployment validated' : 'Workflow validated';
+
+    switch (outcome.kind) {
+      case 'success':
+        toast.success(successTitle, { description: outcome.message });
+        return;
+      case 'validation_error':
+        toast.error('Workflow validation failed', { description: outcome.message });
+        return;
+      case 'server_error':
+        toast.error('Backend error', {
+          description: outcome.details ? `${outcome.message} (${outcome.details})` : outcome.message,
+        });
+        return;
+      case 'timeout':
+        toast.error('Deployment timed out', { description: outcome.message });
+        return;
+      case 'network_error':
+        toast.error('Network error', { description: outcome.message });
+        return;
+    }
+  }, []);
+
   const handleValidateWithBackend = useCallback(async () => {
     setIsValidatingBackend(true);
     setValidationMessage('Validating workflow with backend rules…');
 
-    try {
-      const response = await fetch('/api/deploy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes, edges, dryRun: true }),
-      });
-
-      const result = await response.json();
-      if (result.analysis) {
-        setAnalysisResult(result.analysis);
-      }
-
-      if (!response.ok) {
-        setValidationMessage(result.backendError || result.message || 'Backend validation failed.');
-        return;
-      }
-
-      const queuedPlugins = result.backendPlan?.queued_plugins?.length ?? 0;
-      setValidationMessage(`${result.message} Queued plugin deployments: ${queuedPlugins}.`);
-    } catch (error) {
-      setValidationMessage(error instanceof Error ? error.message : 'Backend validation failed.');
-    } finally {
-      setIsValidatingBackend(false);
-    }
-  }, [edges, nodes]);
+    const outcome = await runDeploy({ nodes, edges, dryRun: true });
+    applyDeployOutcome(outcome, 'validate');
+    setIsValidatingBackend(false);
+  }, [applyDeployOutcome, edges, nodes]);
 
   const handleDeploy = useCallback(async () => {
     setIsDeploying(true);
     setValidationMessage('Running deploy dry run…');
 
-    try {
-      const response = await fetch('/api/deploy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes, edges }),
-      });
-
-      const result = await response.json();
-      if (result.analysis) {
-        setAnalysisResult(result.analysis);
-      }
-
-      if (!response.ok) {
-        setValidationMessage(result.backendError || result.message || 'Deployment dry run failed.');
-        return;
-      }
-
-      const orderedNodes = result.backendPlan?.topological_order?.length ?? 0;
-      setValidationMessage(`${result.message} Planned topological steps: ${orderedNodes}.`);
+    const outcome = await runDeploy({ nodes, edges });
+    applyDeployOutcome(outcome, 'deploy');
+    if (outcome.ok) {
       setShowDeployConfirm(false);
-    } catch (error) {
-      setValidationMessage(error instanceof Error ? error.message : 'Deployment dry run failed.');
-    } finally {
-      setIsDeploying(false);
     }
-  }, [edges, nodes]);
+    setIsDeploying(false);
+  }, [applyDeployOutcome, edges, nodes]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
