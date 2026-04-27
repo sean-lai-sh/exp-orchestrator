@@ -438,8 +438,16 @@ function FlowContent() {
         return;
       }
 
-      const orderedNodes = result.backendPlan?.topological_order?.length ?? 0;
-      setValidationMessage(`${result.message} Planned topological steps: ${orderedNodes}.`);
+      if (result.deployId) {
+        setValidationMessage(
+          `Deployed successfully. Deployment ID: ${result.deployId}\n` +
+          `Run: python3 scripts/sender.py ${result.deployId}\n` +
+          `Run: python3 scripts/receiver.py ${result.deployId}`
+        );
+      } else {
+        const orderedNodes = result.backendPlan?.topological_order?.length ?? 0;
+        setValidationMessage(`${result.message} Planned topological steps: ${orderedNodes}.`);
+      }
       setShowDeployConfirm(false);
     } catch (error) {
       setValidationMessage(error instanceof Error ? error.message : 'Deployment dry run failed.');
