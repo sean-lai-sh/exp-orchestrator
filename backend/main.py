@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import uuid
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from typing import Dict, List
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from allowlist import check_workflow_images
+from transforms import apply_pipeline
 from allocator import allocate_nodes
 from corelink_health import check_corelink_health
 from deployment import deploy
@@ -25,6 +32,16 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=_lifespan)
+
+# In-memory store of deployment plans keyed by short deployment ID
+deployments: Dict[str, dict] = {}
+
+# Message relay: per-deployment list of subscriber queues
+_relay_subscribers: Dict[str, List[asyncio.Queue]] = defaultdict(list)
+
+
+class RelayMessage(BaseModel):
+    data: str
 
 
 @app.post("/deploy")
@@ -154,8 +171,10 @@ async def deploy_and_execute_v2(
     payload: DeployWorkflow, executor: str = "local", inject_env: bool = True
 ):
     """Plan deployment and execute containers via the pluggable executor abstraction."""
+    # Never inject env vars into Docker images when using noop executor
+    effective_inject = inject_env and executor != "noop"
     try:
-        plan = deploy(payload, inject_env=inject_env)
+        plan = deploy(payload, inject_env=effective_inject)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -190,4 +209,125 @@ async def deploy_and_execute_v2(
         status = await ex.start(spec)
         results.append(asdict(status))
 
-    return {"message": "Deploy executed", "plan": plan, "execution": results}
+    deploy_id = uuid.uuid4().hex[:8]
+    deployments[deploy_id] = {
+        "plan": plan,
+        "execution": results,
+        "workflow": payload.model_dump(),
+    }
+
+    return {
+        "message": "Deploy executed",
+        "deploy_id": deploy_id,
+        "plan": plan,
+        "execution": results,
+    }
+
+
+@app.get("/deployments")
+async def list_deployments():
+    """List active deployments."""
+    return {
+        deploy_id: {
+            "node_count": dep["plan"]["node_count"],
+            "edge_count": dep["plan"]["edge_count"],
+            "queued_plugins": dep["plan"]["queued_plugins"],
+        }
+        for deploy_id, dep in deployments.items()
+    }
+
+
+@app.get("/deployments/{deploy_id}/credentials")
+async def get_deployment_credentials(
+    deploy_id: str,
+    role: str = Query(..., pattern="^(sender|receiver)$"),
+):
+    """Return Corelink connection credentials for a sender or receiver in a deployment."""
+    if deploy_id not in deployments:
+        raise HTTPException(status_code=404, detail=f"Deployment '{deploy_id}' not found")
+
+    dep = deployments[deploy_id]
+    plan = dep["plan"]
+    workflow = dep["workflow"]
+    creds_by_node = plan["credentials_by_node"]
+    nodes = workflow["nodes"]
+
+    # Find the first node matching the requested role
+    target_node = None
+    for node in nodes:
+        node_type = node.get("type", "")
+        if role == "sender" and node_type == "sender":
+            target_node = node
+            break
+        if role == "receiver" and node_type == "receiver":
+            target_node = node
+            break
+
+    if not target_node:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No {role} node found in deployment '{deploy_id}'",
+        )
+
+    node_id = target_node["id"]
+    node_creds = creds_by_node.get(node_id, {})
+
+    # Sender needs out_creds to publish; receiver needs in_creds to subscribe
+    if role == "sender":
+        stream_creds = node_creds.get("out_creds", {})
+    else:
+        stream_creds = node_creds.get("in_creds", {})
+
+    return {
+        "deploy_id": deploy_id,
+        "role": role,
+        "node_id": node_id,
+        "credentials": stream_creds,
+    }
+
+
+@app.post("/deployments/{deploy_id}/messages")
+async def post_relay_message(deploy_id: str, msg: RelayMessage):
+    """Sender pushes a message into the relay, applying plugin transforms."""
+    if deploy_id not in deployments:
+        raise HTTPException(status_code=404, detail=f"Deployment '{deploy_id}' not found")
+
+    dep = deployments[deploy_id]
+    topo_order = dep["plan"]["topological_order"]
+    nodes_by_id = {n["id"]: n for n in dep["workflow"]["nodes"]}
+
+    # Get plugin names in topological order (skip sender/receiver)
+    plugin_names = [
+        nodes_by_id[nid].get("data", {}).get("name", "")
+        for nid in topo_order
+        if nodes_by_id.get(nid, {}).get("type") == "plugin"
+    ]
+
+    transformed = apply_pipeline(plugin_names, msg.data)
+
+    for queue in _relay_subscribers[deploy_id]:
+        await queue.put(transformed)
+
+    return {"status": "ok", "listeners": len(_relay_subscribers[deploy_id])}
+
+
+@app.get("/deployments/{deploy_id}/messages")
+async def stream_relay_messages(deploy_id: str):
+    """Receiver subscribes to an SSE stream of relayed messages."""
+    if deploy_id not in deployments:
+        raise HTTPException(status_code=404, detail=f"Deployment '{deploy_id}' not found")
+
+    queue: asyncio.Queue = asyncio.Queue()
+    _relay_subscribers[deploy_id].append(queue)
+
+    async def event_generator():
+        try:
+            while True:
+                data = await queue.get()
+                yield f"data: {json.dumps({'message': data})}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            _relay_subscribers[deploy_id].remove(queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

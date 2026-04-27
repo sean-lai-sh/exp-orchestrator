@@ -19,6 +19,8 @@ export async function POST(request: NextRequest) {
     const analysis = analyzeDAG(nodes, edges);
     const workflow = toBackendDeployWorkflow(nodes, edges);
 
+    console.log('[deploy] frontend analysis valid:', analysis.valid, 'issues:', analysis.issues.length);
+
     const frontendDir = process.cwd();
     const repoDir = path.resolve(frontendDir, '..');
     const tempDir = await mkdtemp(path.join(tmpdir(), 'exp-orchestrator-validate-'));
@@ -34,7 +36,10 @@ export async function POST(request: NextRequest) {
       });
 
       const backendResult = JSON.parse(stdout || '{}');
+      console.log('[deploy] CLI validation valid:', backendResult.valid);
+
       if (!backendResult.valid) {
+        console.log('[deploy] STOPPED: CLI validation failed');
         return NextResponse.json(
           {
             success: false,
@@ -47,19 +52,57 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      if (!analysis.valid) {
+        console.log('[deploy] STOPPED: frontend analysis invalid — not calling backend');
+        const errorSummary = analysis.issues.map((i: { code: string; severity: string }) => `${i.severity}:${i.code}`).join(', ');
+        return NextResponse.json({
+          success: true,
+          valid: false,
+          message: `Backend OK but frontend analyzer blocked deploy: ${errorSummary}`,
+          analysis,
+          backendPlan: backendResult.result,
+        });
+      }
+
+      // Validation passed — execute the actual deployment
+      const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+      console.log('[deploy] calling backend:', `${backendUrl}/deploy/execute/v2?executor=noop&inject_env=false`);
+
+      const executeRes = await fetch(`${backendUrl}/deploy/execute/v2?executor=noop&inject_env=false`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(workflow),
+      });
+
+      if (!executeRes.ok) {
+        const detail = await executeRes.text();
+        console.log('[deploy] backend execute failed:', executeRes.status, detail);
+        return NextResponse.json({
+          success: true,
+          valid: true,
+          message: 'Validation passed but deployment execution failed.',
+          analysis,
+          backendPlan: backendResult.result,
+          backendError: detail,
+        });
+      }
+
+      const executeResult = await executeRes.json();
+      console.log('[deploy] SUCCESS deploy_id:', executeResult.deploy_id);
+
       return NextResponse.json({
         success: true,
-        valid: analysis.valid,
-        message: analysis.valid
-          ? 'Frontend and backend validation both passed.'
-          : 'Backend validation passed, but the frontend analyzer still found deploy blockers or warnings.',
+        valid: true,
+        message: 'Deployed successfully.',
         analysis,
         backendPlan: backendResult.result,
+        deployId: executeResult.deploy_id,
       });
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
   } catch (error) {
+    console.error('[deploy] EXCEPTION:', error);
     return NextResponse.json(
       {
         success: false,

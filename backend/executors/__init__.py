@@ -22,7 +22,11 @@ def get_executor(strategy: str | None = None) -> Executor:
     """
     strategy = strategy or os.getenv("EXECUTOR_BACKEND", "local")
 
-    if strategy == "local":
+    if strategy == "noop":
+        from .noop import NoopExecutor
+
+        return NoopExecutor()
+    elif strategy == "local":
         return LocalDockerExecutor()
     elif strategy == "ecs":
         from .ecs import ECSExecutor
@@ -36,5 +40,5 @@ def get_executor(strategy: str | None = None) -> Executor:
     else:
         raise ValueError(
             f"Unknown executor strategy: '{strategy}'. "
-            f"Supported: 'local', 'ecs'"
+            f"Supported: 'noop', 'local', 'ecs'"
         )

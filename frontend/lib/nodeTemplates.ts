@@ -149,12 +149,13 @@ export const nodeTemplates: NodeTemplate[] = [
       name: 'Caesar Cipher',
       description: 'Shifts letters in the alphabet by a fixed number for encryption/decryption',
       nodeType: 'plugin' as const,
+      runtime: 'ghcr.io/exp-orchestrator/caesar-cipher:latest',
       sources: ['encrypted_text', 'cipher_key'],
       access_types: {
         canSend: true,
         canReceive: true,
-        allowedSendTypes: ['text', 'cipher_key'],
-        allowedReceiveTypes: ['text', 'shift_value']
+        allowedSendTypes: ['text', 'json', 'cipher_key'],
+        allowedReceiveTypes: ['text', 'json', 'shift_value']
       }
     } as Partial<PluginNodeData>
   },

@@ -1,6 +1,7 @@
 'use client';
 
-import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
+import { AlertCircle, AlertTriangle, CheckCircle2, ChevronUp, Info, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { AnalysisResult, AnalyzerIssue } from '@/lib/dag-analyzer';
 
@@ -47,6 +48,8 @@ export default function AnalyzerPanel({
   onValidateWithBackend,
   onFocusIssue,
 }: AnalyzerPanelProps) {
+  const [expanded, setExpanded] = useState(false);
+
   const issues = analysisResult?.issues ?? [];
   const issuesByCategory = issues.reduce<Record<string, AnalyzerIssue[]>>((acc, issue) => {
     if (!acc[issue.category]) {
@@ -59,103 +62,146 @@ export default function AnalyzerPanel({
   const pluginCount = analysisResult?.stats.pluginCount ?? 0;
   const readyCount = analysisResult?.stats.readyToDeployCount ?? 0;
   const readinessPercent = pluginCount > 0 ? Math.round((readyCount / pluginCount) * 100) : 100;
+  const errorCount = analysisResult?.stats.errorCount ?? 0;
+  const warningCount = analysisResult?.stats.warningCount ?? 0;
 
   return (
-    <div className="absolute inset-x-4 bottom-4 z-20 rounded-xl border border-slate-200 bg-white/95 shadow-xl backdrop-blur">
-      <div className="flex flex-col gap-4 p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              {analysisResult?.valid ? (
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
-              ) : (
-                <AlertTriangle className="h-4 w-4 text-yellow-600" />
-              )}
-              DAG Analyzer
-            </div>
-            <p className="mt-1 text-xs text-slate-600">
+    <div
+      className="group fixed inset-x-4 bottom-0 z-20"
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+    >
+      {/* Peek tab — always visible */}
+      <div
+        className={`
+          mx-auto flex max-w-3xl cursor-pointer items-center justify-between gap-4
+          rounded-t-xl border border-b-0 border-slate-200 bg-white/95 px-4 py-2
+          shadow-lg backdrop-blur transition-transform duration-300
+          ${expanded ? '' : 'translate-y-0'}
+        `}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+          {analysisResult?.valid ? (
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+          ) : (
+            <AlertTriangle className="h-4 w-4 text-yellow-600" />
+          )}
+          DAG Analyzer
+          {errorCount > 0 && (
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+              {errorCount} {errorCount === 1 ? 'blocker' : 'blockers'}
+            </span>
+          )}
+          {warningCount > 0 && (
+            <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700">
+              {warningCount} {warningCount === 1 ? 'warning' : 'warnings'}
+            </span>
+          )}
+          {errorCount === 0 && warningCount === 0 && (
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              Ready
+            </span>
+          )}
+        </div>
+        <ChevronUp
+          className={`h-4 w-4 text-slate-400 transition-transform duration-300 ${expanded ? '' : 'rotate-180'}`}
+        />
+      </div>
+
+      {/* Expanded panel */}
+      <div
+        className={`
+          overflow-hidden rounded-t-none border border-t-0 border-slate-200
+          bg-white/95 shadow-xl backdrop-blur
+          transition-all duration-300 ease-in-out
+          ${expanded ? 'max-h-[60vh] opacity-100' : 'max-h-0 border-transparent opacity-0'}
+        `}
+      >
+        <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <p className="text-xs text-slate-600">
               Real-time deploy readiness based on cycle checks, connection rules, runtime status, and stream compatibility.
             </p>
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button variant="outline" onClick={onValidateWithBackend} disabled={isValidating}>
-              {isValidating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Validate with Backend
-            </Button>
-          </div>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Nodes</div>
-            <div className="mt-1 text-2xl font-semibold text-slate-900">{analysisResult?.stats.nodeCount ?? 0}</div>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Edges</div>
-            <div className="mt-1 text-2xl font-semibold text-slate-900">{analysisResult?.stats.edgeCount ?? 0}</div>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Blockers / Warnings</div>
-            <div className="mt-1 text-2xl font-semibold text-slate-900">
-              {analysisResult?.stats.errorCount ?? 0} / {analysisResult?.stats.warningCount ?? 0}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button variant="outline" onClick={onValidateWithBackend} disabled={isValidating}>
+                {isValidating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Validate with Backend
+              </Button>
             </div>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500">
-              <span>Deploy readiness</span>
-              <span>{readinessPercent}%</span>
-            </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${readinessPercent}%` }} />
-            </div>
-            <div className="mt-2 text-xs text-slate-600">
-              {readyCount} of {pluginCount} plugin nodes are ready to deploy.
-            </div>
-          </div>
-        </div>
 
-        {validationMessage && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            {validationMessage}
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Nodes</div>
+              <div className="mt-1 text-2xl font-semibold text-slate-900">{analysisResult?.stats.nodeCount ?? 0}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Edges</div>
+              <div className="mt-1 text-2xl font-semibold text-slate-900">{analysisResult?.stats.edgeCount ?? 0}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Blockers / Warnings</div>
+              <div className="mt-1 text-2xl font-semibold text-slate-900">
+                {errorCount} / {warningCount}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500">
+                <span>Deploy readiness</span>
+                <span>{readinessPercent}%</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                <div className="h-full rounded-full bg-emerald-500" style={{ width: `${readinessPercent}%` }} />
+              </div>
+              <div className="mt-2 text-xs text-slate-600">
+                {readyCount} of {pluginCount} plugin nodes are ready to deploy.
+              </div>
+            </div>
           </div>
-        )}
 
-        {issues.length === 0 ? (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-            No analyzer issues found. This workflow is ready for backend validation.
-          </div>
-        ) : (
-          <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-            {Object.entries(issuesByCategory).map(([category, categoryIssues]) => (
-              <details key={category} open className="rounded-lg border border-slate-200 bg-white">
-                <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-slate-900">
-                  {categoryLabels[category as AnalyzerIssue['category']]} ({categoryIssues.length})
-                </summary>
-                <div className="space-y-2 border-t border-slate-100 p-3">
-                  {categoryIssues.map((issue, index) => (
-                    <button
-                      key={`${category}-${index}-${issue.message}`}
-                      type="button"
-                      onClick={() => onFocusIssue(issue)}
-                      className={`w-full rounded-lg border p-3 text-left transition hover:shadow-sm ${severityClasses(issue.severity)}`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className="mt-0.5">{severityIcon(issue.severity)}</div>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium">{issue.message}</div>
-                          {issue.fix && (
-                            <div className="mt-1 text-xs opacity-90">Suggested fix: {issue.fix}</div>
-                          )}
+          {validationMessage && (
+            <div className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              {validationMessage}
+            </div>
+          )}
+
+          {issues.length === 0 ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+              No analyzer issues found. This workflow is ready for backend validation.
+            </div>
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+              {Object.entries(issuesByCategory).map(([category, categoryIssues]) => (
+                <details key={category} open className="rounded-lg border border-slate-200 bg-white">
+                  <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-slate-900">
+                    {categoryLabels[category as AnalyzerIssue['category']]} ({categoryIssues.length})
+                  </summary>
+                  <div className="space-y-2 border-t border-slate-100 p-3">
+                    {categoryIssues.map((issue, index) => (
+                      <button
+                        key={`${category}-${index}-${issue.message}`}
+                        type="button"
+                        onClick={() => onFocusIssue(issue)}
+                        className={`w-full rounded-lg border p-3 text-left transition hover:shadow-sm ${severityClasses(issue.severity)}`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className="mt-0.5">{severityIcon(issue.severity)}</div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium">{issue.message}</div>
+                            {issue.fix && (
+                              <div className="mt-1 text-xs opacity-90">Suggested fix: {issue.fix}</div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </details>
-            ))}
-          </div>
-        )}
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
