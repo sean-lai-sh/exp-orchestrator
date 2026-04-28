@@ -54,6 +54,23 @@ async def _on_data(data: bytes, stream_id: int, header: dict) -> None:
         await corelink.send(sid, result)
 
 
+async def _on_stream_update(message: dict, key: str) -> None:
+    """Subscribe to new senders that arrive after we created our receiver.
+
+    Corelink fires this callback (key='update') for every alert. Stream-alert
+    messages carry a `streamID` we should subscribe to so the plugin actually
+    receives data from senders that connect later (e.g., the user starting
+    sender.js after the deploy).
+    """
+    sid = message.get("streamID")
+    if sid is None:
+        return
+    try:
+        await corelink.subscribe(stream_ids=[sid])
+    except Exception as e:
+        print(f"[demo-plugin] subscribe error for stream_id={sid}: {e}")
+
+
 async def _corelink_loop() -> None:
     host = os.environ.get("CORELINK_HOST", "")
     port = int(os.environ.get("CORELINK_PORT", "20012"))
@@ -70,6 +87,10 @@ async def _corelink_loop() -> None:
     print(f"[demo-plugin] Connected to Corelink at {host}:{port}")
 
     await corelink.set_data_callback(_on_data)
+    # Subscribe to senders that arrive after the receiver is set up.
+    # The Python corelink client doesn't auto-subscribe via alert=True;
+    # we have to explicitly handle the 'update' callback.
+    await corelink.set_server_callback(_on_stream_update, "update")
 
     in_streams = _parse_stream_env("IN_")
     for stream_type, cfg in in_streams.items():
