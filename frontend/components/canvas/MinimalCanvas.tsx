@@ -138,6 +138,26 @@ function FlowContent({ projectId }: { projectId: string | null }) {
   const [showCheckmark, setShowCheckmark] = useState(false); // Show checkmark after progress
   const [isCleaning, setIsCleaning] = useState(false); // New state for cleaning
   const [showCleanConfirm, setShowCleanConfirm] = useState(false); // New state for clean confirm
+  // Last deploy_id for the current project, persisted in localStorage so it
+  // survives reloads and can be displayed in the top navbar (with copy).
+  const deployIdStorageKey = projectId ? `lastDeployId:${projectId}` : 'lastDeployId:ephemeral';
+  const [lastDeployId, setLastDeployId] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.localStorage.getItem(deployIdStorageKey);
+      if (stored) setLastDeployId(stored);
+      else setLastDeployId(null);
+    } catch { /* ignore */ }
+  }, [deployIdStorageKey]);
+  const persistDeployId = useCallback((id: string | null) => {
+    setLastDeployId(id);
+    if (typeof window === 'undefined') return;
+    try {
+      if (id) window.localStorage.setItem(deployIdStorageKey, id);
+      else window.localStorage.removeItem(deployIdStorageKey);
+    } catch { /* ignore */ }
+  }, [deployIdStorageKey]);
   const edgeReconnectSuccessful = useRef(true);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlowInstance = useReactFlow();
@@ -464,6 +484,7 @@ function FlowContent({ projectId }: { projectId: string | null }) {
         const plan = data.plan ?? {};
         const nodeCount = plan.node_count ?? data.node_count ?? '?';
         const edgeCount = plan.edge_count ?? data.edge_count ?? '?';
+        if (deployId) persistDeployId(deployId);
         const description = deployId
           ? `deploy_id: ${deployId} — ${nodeCount} nodes, ${edgeCount} edges`
           : `${nodeCount} nodes, ${edgeCount} edges queued`;
@@ -530,6 +551,7 @@ function FlowContent({ projectId }: { projectId: string | null }) {
         currentProjectId={projectId}
         isDeploying={isDeploying || deployAnimationActive}
         onDeploy={handleDeployClick}
+        lastDeployId={lastDeployId}
       />
       <AnimatePresence>
       {deployAnimationActive && (

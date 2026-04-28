@@ -5,7 +5,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ChevronDown, Plus, LayoutDashboard } from "lucide-react";
+import { ChevronDown, Plus, LayoutDashboard, Copy, Check } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +20,7 @@ interface CanvasTopChromeProps {
   currentProjectId: string | null;
   isDeploying: boolean;
   onDeploy: () => void;
+  lastDeployId: string | null;
 }
 
 /**
@@ -30,11 +31,24 @@ export default function CanvasTopChrome({
   currentProjectId,
   isDeploying,
   onDeploy,
+  lastDeployId,
 }: CanvasTopChromeProps) {
   const router = useRouter();
   const projects = useQuery(api.projects.list);
   const createProject = useMutation(api.projects.create);
   const [isCreating, setIsCreating] = useState(false);
+  const [copiedDeployId, setCopiedDeployId] = useState(false);
+
+  const handleCopyDeployId = async () => {
+    if (!lastDeployId) return;
+    try {
+      await navigator.clipboard?.writeText(lastDeployId);
+      setCopiedDeployId(true);
+      setTimeout(() => setCopiedDeployId(false), 1500);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const currentProject = projects?.find(
     (p) => p._id === (currentProjectId as Id<"projects">)
@@ -166,6 +180,36 @@ export default function CanvasTopChrome({
           <span className="dot" style={{ background: "var(--ink-4)" }} />
           draft
         </span>
+
+        {lastDeployId && (
+          <button
+            onClick={handleCopyDeployId}
+            title="Click to copy deploy_id"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "4px 10px",
+              border: "1px solid var(--line-strong)",
+              borderRadius: 999,
+              background: "var(--paper)",
+              color: "var(--ink-2)",
+              fontSize: 12,
+              fontFamily: "var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)",
+              cursor: "pointer",
+            }}
+          >
+            <span style={{ color: "var(--ink-4)", fontFamily: "var(--font-sans-orch)" }}>
+              deploy_id
+            </span>
+            <span>{lastDeployId}</span>
+            {copiedDeployId ? (
+              <Check className="h-3 w-3" style={{ color: "var(--ink-3)" }} />
+            ) : (
+              <Copy className="h-3 w-3" style={{ opacity: 0.55 }} />
+            )}
+          </button>
+        )}
       </div>
 
       {/* Right: search + deploy */}
