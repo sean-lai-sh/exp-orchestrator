@@ -13,12 +13,44 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const injectEnv = request.nextUrl.searchParams.get('inject_env') === 'true';
+  // executor=local launches plugin nodes via the executor (which injects env
+  // vars itself via `docker run -e`). Keep inject_env=false to avoid the
+  // legacy inject_vars_to_image side-effect that spawns a redundant
+  // `docker compose up` container ("t-app-1") and conflicts with the
+  // executor's own start. Either flag is overridable per-request via
+  // query string.
+  const executor = (request.nextUrl.searchParams.get('executor') ?? 'local').toLowerCase();
+  const injectEnv = (request.nextUrl.searchParams.get('inject_env') ?? 'false').toLowerCase();
+  const backendQuery = `executor=${encodeURIComponent(executor)}&inject_env=${encodeURIComponent(injectEnv)}`;
+
+  // Best-effort: DELETE any deployments still active in the orchestrator
+  // before creating a new one. Without this, repeated canvas-deploy clicks
+  // leave orphan plugin containers running (and orphan corelink workspaces
+  // bloating the corelink-server's stream-relay state).
+  try {
+    const listRes = await fetch(`${BACKEND_URL}/deployments`);
+    if (listRes.ok) {
+      const active: Record<string, unknown> = await listRes.json();
+      const deployIds = Object.keys(active);
+      if (deployIds.length > 0) {
+        console.log('[deploy] cleaning up', deployIds.length, 'previous deployment(s) before launching new one');
+        await Promise.all(
+          deployIds.map((id) =>
+            fetch(`${BACKEND_URL}/deployments/${id}`, { method: 'DELETE' })
+              .then(() => undefined)
+              .catch((e) => console.warn('[deploy] failed to DELETE deployment:', id, e)),
+          ),
+        );
+      }
+    }
+  } catch (e) {
+    console.warn('[deploy] previous-deployment cleanup skipped:', e);
+  }
 
   let backendRes: Response;
   try {
     backendRes = await fetch(
-      `${BACKEND_URL}/deploy?inject_env=${injectEnv}`,
+      `${BACKEND_URL}/deploy/execute/v2?${backendQuery}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

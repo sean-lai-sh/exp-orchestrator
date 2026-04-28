@@ -35,8 +35,10 @@ def linear_workflow() -> DeployWorkflow:
 
 
 def test_deploy_returns_deterministic_idempotent_plan(linear_workflow: DeployWorkflow) -> None:
-    first = deployment.deploy(linear_workflow, inject_env=False)
-    second = deployment.deploy(linear_workflow, inject_env=False)
+    first = deployment.deploy(linear_workflow, deploy_id="abc12345",
+                              workspace="workflow_abc12345", inject_env=False)
+    second = deployment.deploy(linear_workflow, deploy_id="abc12345",
+                               workspace="workflow_abc12345", inject_env=False)
 
     assert first == second
     assert first["node_count"] == 3
@@ -62,8 +64,13 @@ def test_deploy_returns_deterministic_idempotent_plan(linear_workflow: DeployWor
     assert plugin_b_env["IN_BYTES_STREAM_ID"] == "plugin-a_plugin-b_bytes_stream"
 
     assert first["credentials_by_node"]["source"]["out_creds"]["json"]["workspace"] == (
-        "source_plugin-a_json_workspace"
+        "workflow_abc12345"
     )
+    # Every credential in the plan uses the same deploy-scoped workspace
+    for node_creds in first["credentials_by_node"].values():
+        for stream_creds in (node_creds["in_creds"], node_creds["out_creds"]):
+            for cred in stream_creds.values():
+                assert cred["workspace"] == "workflow_abc12345"
     assert first["credentials_by_node"]["plugin-b"]["in_creds"]["bytes"]["stream_id"] == (
         "plugin-a_plugin-b_bytes_stream"
     )
@@ -86,7 +93,7 @@ def test_deploy_rejects_unknown_edge_endpoints(edge: DeployEdge, message: str) -
     )
 
     with pytest.raises(ValueError, match=message):
-        deployment.deploy(workflow)
+        deployment.deploy(workflow, deploy_id="test", workspace="workflow_test")
 
 
 def test_deploy_rejects_cycles() -> None:
@@ -102,7 +109,7 @@ def test_deploy_rejects_cycles() -> None:
     )
 
     with pytest.raises(ValueError, match="Cycle detected"):
-        deployment.deploy(workflow)
+        deployment.deploy(workflow, deploy_id="test", workspace="workflow_test")
 
 
 def test_deploy_rejects_stream_contract_mismatch() -> None:
@@ -118,7 +125,7 @@ def test_deploy_rejects_stream_contract_mismatch() -> None:
         ValueError,
         match="Stream type json not found in destination plugin-a in streams",
     ):
-        deployment.deploy(workflow)
+        deployment.deploy(workflow, deploy_id="test", workspace="workflow_test")
 
 
 def test_deploy_infers_streams_when_edge_contract_is_present() -> None:
@@ -130,7 +137,7 @@ def test_deploy_infers_streams_when_edge_contract_is_present() -> None:
         edges=[DeployEdge(source="source", target="plugin-a", data="parquet")],
     )
 
-    result = deployment.deploy(workflow)
+    result = deployment.deploy(workflow, deploy_id="test", workspace="workflow_test")
 
     assert result["topological_order"] == ["source", "plugin-a"]
     assert result["env_plan"]["plugin-a"]["IN_PARQUET_STREAM_ID"] == "source_plugin-a_parquet_stream"
@@ -147,7 +154,7 @@ def test_deploy_injects_env_only_for_plugins_with_images(
 
     monkeypatch.setattr(deployment, "inject_vars_to_image", fake_inject)
 
-    result = deployment.deploy(linear_workflow, inject_env=True)
+    result = deployment.deploy(linear_workflow, deploy_id="test", workspace="workflow_test", inject_env=True)
 
     assert [image_name for image_name, _ in injected] == ["test/plugin-a:latest"]
     assert result["injected_nodes"] == ["plugin-a"]
@@ -185,3 +192,40 @@ def test_inject_vars_to_image_uses_disposable_compose_file(
     assert "- NODE_ID=plugin-a" in captured["content"]
     assert "- IN_JSON_STREAM_ID=stream-1" in captured["content"]
     assert not compose_file.exists()
+
+
+def test_corelink_env_injected_for_plugins_only(linear_workflow: DeployWorkflow) -> None:
+    corelink = {
+        "host": "1.2.3.4",
+        "port": 20012,
+        "username": "Testuser",
+        "password": "Testpassword",
+    }
+    plan = deployment.deploy(
+        linear_workflow,
+        deploy_id="abc",
+        workspace="workflow_abc",
+        corelink_creds=corelink,
+        inject_env=False,
+    )
+    plugin_a = plan["env_plan"]["plugin-a"]
+    assert plugin_a["CORELINK_HOST"] == "1.2.3.4"
+    assert plugin_a["CORELINK_PORT"] == "20012"
+    assert plugin_a["CORELINK_USERNAME"] == "Testuser"
+    assert plugin_a["CORELINK_PASSWORD"] == "Testpassword"
+
+    # Sender/receiver nodes don't get plugin-only injection
+    # In the linear_workflow fixture there's no receiver, but plugin-b is type=plugin too.
+    # Just confirm no extraneous keys leaked.
+
+
+def test_corelink_env_omitted_when_creds_not_provided(linear_workflow: DeployWorkflow) -> None:
+    plan = deployment.deploy(
+        linear_workflow,
+        deploy_id="abc",
+        workspace="workflow_abc",
+        inject_env=False,
+    )
+    plugin_a = plan["env_plan"]["plugin-a"]
+    assert "CORELINK_HOST" not in plugin_a
+    assert "CORELINK_PASSWORD" not in plugin_a

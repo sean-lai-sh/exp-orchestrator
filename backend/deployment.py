@@ -24,7 +24,9 @@ def _normalize_env_key(stream_type: str) -> str:
     return normalized or "JSON"
 
 
-def process_workflow(edges: List[DeployEdge], nodes_by_id: Dict[str, DeployNode]) -> int:
+def process_workflow(
+    edges: List[DeployEdge], nodes_by_id: Dict[str, DeployNode], workspace: str
+) -> int:
     for edge in edges:
         if edge.source not in nodes_by_id:
             raise ValueError(f"Unknown source node '{edge.source}'")
@@ -50,7 +52,7 @@ def process_workflow(edges: List[DeployEdge], nodes_by_id: Dict[str, DeployNode]
                 f"Stream type {stream_type} not found in destination {dst.id} in streams"
             )
 
-        cred = generate_pub_sub_cred(stream_type, src, dst)
+        cred = generate_pub_sub_cred(stream_type, src, dst, workspace)
         src.out_creds[stream_type] = cred
         dst.in_creds[stream_type] = cred
 
@@ -70,10 +72,10 @@ def assign_deployment(deployment_queue: Deque[DeployNode]) -> List[str]:
 
 
 def generate_pub_sub_cred(
-    stream_type: str, src: DeployNode, dst: DeployNode
+    stream_type: str, src: DeployNode, dst: DeployNode, workspace: str
 ) -> StreamCredential:
     return StreamCredential(
-        workspace=f"{src.id}_{dst.id}_{stream_type}_workspace",
+        workspace=workspace,
         protocol="pubsub",
         stream_id=f"{src.id}_{dst.id}_{stream_type}_stream",
         data_type=stream_type,
@@ -142,7 +144,15 @@ def _compute_topological_order(
     return order, dict(graph)
 
 
-def deploy(workflow: DeployWorkflow, inject_env: bool = False) -> Dict[str, Any]:
+def deploy(
+    workflow: DeployWorkflow,
+    deploy_id: str = "local",
+    workspace: str | None = None,
+    corelink_creds: Dict[str, Any] | None = None,
+    inject_env: bool = False,
+) -> Dict[str, Any]:
+    if workspace is None:
+        workspace = f"workflow_{deploy_id}"
     nodes_by_id = {node.id: node.model_copy(deep=True) for node in workflow.nodes}
 
     for edge in workflow.edges:
@@ -152,7 +162,7 @@ def deploy(workflow: DeployWorkflow, inject_env: bool = False) -> Dict[str, Any]
             raise ValueError(f"Edge target '{edge.target}' not found in nodes")
 
     topo_order, dag_graph = _compute_topological_order(nodes_by_id, workflow.edges)
-    process_workflow(workflow.edges, nodes_by_id)
+    process_workflow(workflow.edges, nodes_by_id, workspace)
 
     ordered_nodes = [nodes_by_id[node_id] for node_id in topo_order]
     deployment_queue: Deque[DeployNode] = deque()
@@ -165,6 +175,11 @@ def deploy(workflow: DeployWorkflow, inject_env: bool = False) -> Dict[str, Any]
 
     for node in deployment_queue:
         env_vars = build_env_vars(node)
+        if corelink_creds and node.type == "plugin":
+            env_vars["CORELINK_HOST"] = str(corelink_creds["host"])
+            env_vars["CORELINK_PORT"] = str(corelink_creds["port"])
+            env_vars["CORELINK_USERNAME"] = str(corelink_creds["username"])
+            env_vars["CORELINK_PASSWORD"] = str(corelink_creds["password"])
         env_plan[node.id] = env_vars
         image_name = fetch_image_name(node)
 
@@ -187,6 +202,8 @@ def deploy(workflow: DeployWorkflow, inject_env: bool = False) -> Dict[str, Any]
         }
 
     return {
+        "deploy_id": deploy_id,
+        "workspace": workspace,
         "node_count": len(nodes_by_id),
         "edge_count": len(workflow.edges),
         "topological_order": topo_order,
@@ -208,4 +225,4 @@ if __name__ == "__main__":
         ],
         edges=[DeployEdge(source="source", target="plugin-a", data="json")],
     )
-    print(deploy(example_workflow, inject_env=False))
+    print(deploy(example_workflow, deploy_id="example", inject_env=False))

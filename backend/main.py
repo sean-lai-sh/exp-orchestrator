@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from allowlist import check_workflow_images
 from transforms import apply_pipeline
 from allocator import allocate_nodes
+import corelink_admin
 from corelink_health import check_corelink_health
 from deployment import deploy
 from executor import execute_dag
@@ -171,10 +172,31 @@ async def deploy_and_execute_v2(
     payload: DeployWorkflow, executor: str = "local", inject_env: bool = True
 ):
     """Plan deployment and execute containers via the pluggable executor abstraction."""
-    # Never inject env vars into Docker images when using noop executor
+    # Mint the deploy_id up-front so it can be the workspace key
+    deploy_id = uuid.uuid4().hex[:8]
+
+    # Provision a Corelink workspace + creds for this deployment
+    try:
+        provisioning = await corelink_admin.provision_deployment(deploy_id)
+    except corelink_admin.CorelinkAdminError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    corelink_creds = {
+        "host": provisioning.host,
+        "port": provisioning.port,
+        "username": provisioning.username,
+        "password": provisioning.password,
+    }
+
     effective_inject = inject_env and executor != "noop"
     try:
-        plan = deploy(payload, inject_env=effective_inject)
+        plan = deploy(
+            payload,
+            deploy_id=deploy_id,
+            workspace=provisioning.workspace,
+            corelink_creds=corelink_creds,
+            inject_env=effective_inject,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -209,11 +231,21 @@ async def deploy_and_execute_v2(
         status = await ex.start(spec)
         results.append(asdict(status))
 
-    deploy_id = uuid.uuid4().hex[:8]
+    # NOTE: demo-only — the provisioning blob (incl. corelink password) is stored
+    # in process memory and re-emitted by /deployments/{id}/credentials, which has
+    # no AuthN/AuthZ. Pre-prod hardening must gate that endpoint or scrub the
+    # password before returning it.
     deployments[deploy_id] = {
         "plan": plan,
         "execution": results,
         "workflow": payload.model_dump(),
+        "provisioning": {
+            "workspace": provisioning.workspace,
+            "host": provisioning.host,
+            "port": provisioning.port,
+            "username": provisioning.username,
+            "password": provisioning.password,
+        },
     }
 
     return {
@@ -278,10 +310,32 @@ async def get_deployment_credentials(
     else:
         stream_creds = node_creds.get("in_creds", {})
 
+    provisioning = dep.get("provisioning", {})
+    corelink_block = None
+    if provisioning:
+        # Different connections to corelink-server must use different users — the
+        # server suppresses stream-update notifications between same-user
+        # connections ("skipping stream from same user"). The plugin container
+        # uses provisioning.username (Testuser); sender/receiver get distinct
+        # seeded users so all three nodes route correctly.
+        # NOTE: demo-only — relies on corelink-server's seeded test users
+        # (Testuser1/Testuser2 with the shared Testpassword). Production would
+        # provision per-deployment users.
+        role_user = {
+            "sender": "Testuser1",
+            "receiver": "Testuser2",
+        }.get(role, provisioning["username"])
+        corelink_block = {
+            "host": provisioning["host"],
+            "port": provisioning["port"],
+            "username": role_user,
+            "password": provisioning["password"],
+        }
     return {
         "deploy_id": deploy_id,
         "role": role,
         "node_id": node_id,
+        "corelink": corelink_block,
         "credentials": stream_creds,
     }
 
@@ -331,3 +385,33 @@ async def stream_relay_messages(deploy_id: str):
             _relay_subscribers[deploy_id].remove(queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.delete("/deployments/{deploy_id}")
+async def delete_deployment(deploy_id: str):
+    """Stop containers, unprovision Corelink workspace, remove deployment record."""
+    if deploy_id not in deployments:
+        raise HTTPException(status_code=404, detail=f"Deployment '{deploy_id}' not found")
+
+    dep = deployments[deploy_id]
+    warnings: list[str] = []
+
+    # Stop running containers (best-effort)
+    ex = get_executor()
+    for status in dep.get("execution", []):
+        cid = status.get("container_id")
+        if not cid:
+            continue
+        try:
+            await ex.stop(cid)
+        except Exception as e:
+            warnings.append(f"stop {cid} failed: {e}")
+
+    # Unprovision Corelink workspace
+    try:
+        await corelink_admin.unprovision_deployment(deploy_id)
+    except corelink_admin.CorelinkAdminError as e:
+        warnings.append(f"unprovision failed: {e}")
+
+    deployments.pop(deploy_id, None)
+    return {"status": "deleted", "deploy_id": deploy_id, "warnings": warnings}
