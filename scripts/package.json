@@ -1,0 +1,13 @@
+{
+  "name": "exp-orchestrator-scripts",
+  "version": "0.1.0",
+  "description": "Node sender/receiver scripts for the auto-connect demo",
+  "private": true,
+  "scripts": {
+    "test": "node --test 'lib/__tests__/**/*.test.js'"
+  },
+  "dependencies": {},
+  "optionalDependencies": {
+    "@corelinkhub/corelink-client": "^5.1.2"
+  }
+}
