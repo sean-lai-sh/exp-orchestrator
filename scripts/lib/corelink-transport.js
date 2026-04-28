@@ -12,13 +12,32 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 
 const corelink = require('./vendor/corelink.lib.js')
 
+function _withTimeout(promise, ms, what) {
+  return Promise.race([
+    promise,
+    new Promise((_resolve, reject) =>
+      setTimeout(
+        () => reject(new Error(
+          `corelink ${what} timed out after ${ms / 1000}s — corelink-server may be wedged ` +
+          '(ERR_OUT_OF_RANGE in v6). Try: bash /tmp/full-restart.sh',
+        )),
+        ms,
+      ),
+    ),
+  ])
+}
+
 async function connect({ host, deployId, role, credentials, corelinkBlock }) {
   if (!corelinkBlock) {
     throw new Error('corelink block missing from credentials response')
   }
-  await corelink.connect(
-    { username: corelinkBlock.username, password: corelinkBlock.password },
-    { ControlIP: corelinkBlock.host, ControlPort: corelinkBlock.port },
+  await _withTimeout(
+    corelink.connect(
+      { username: corelinkBlock.username, password: corelinkBlock.password },
+      { ControlIP: corelinkBlock.host, ControlPort: corelinkBlock.port },
+    ),
+    10_000,
+    'connect',
   )
 
   const streamTypes = Object.keys(credentials || {})
@@ -29,11 +48,15 @@ async function connect({ host, deployId, role, credentials, corelinkBlock }) {
   const cred = credentials[streamType]
 
   if (role === 'sender') {
-    const sendId = await corelink.createSender({
-      workspace: cred.workspace,
-      protocol: 'ws',
-      type: cred.data_type,
-    })
+    const sendId = await _withTimeout(
+      corelink.createSender({
+        workspace: cred.workspace,
+        protocol: 'ws',
+        type: cred.data_type,
+      }),
+      10_000,
+      'createSender',
+    )
     return { role, sendId, cred, streamType }
   }
   // receiver
@@ -63,13 +86,24 @@ async function subscribe(handle, onMessage) {
   corelink.on('data', (streamID, data) => {
     onMessage(data.toString('utf-8'))
   })
-  const streamList = await corelink.createReceiver({
+  // corelink-server v6 occasionally hangs createReceiver when its streamRelay
+  // state has bloated across many deploys (unhandled ERR_OUT_OF_RANGE inside
+  // the server). Race with a timeout so the script fails fast with an
+  // actionable hint instead of sitting silently.
+  const createPromise = corelink.createReceiver({
     workspace: handle.cred.workspace,
     streamIDs: [],
     type: handle.cred.data_type,
     protocol: 'ws',
     alert: true,
   })
+  const timeoutPromise = new Promise((_resolve, reject) => {
+    setTimeout(() => reject(new Error(
+      'corelink createReceiver timed out after 10s — corelink-server may be wedged ' +
+      '(ERR_OUT_OF_RANGE in v6). Try: bash /tmp/full-restart.sh',
+    )), 10_000)
+  })
+  const streamList = await Promise.race([createPromise, timeoutPromise])
   for (const item of streamList || []) {
     await safeSubscribe(item && item.streamID)
   }

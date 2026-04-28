@@ -116,6 +116,12 @@ async def _corelink_loop() -> None:
             data_type=stream_type.lower(),
             stream_ids=[],
             alert=True,
+            # subscribe=False so the lib does NOT auto-subscribe to streams in
+            # the initial streamList — _on_stream_update is the single source
+            # of truth for subscriptions, dedupe-tracked in _subscribed_pairs.
+            # Without this, the lib subscribes once via subscribe=True AND our
+            # alert handler subscribes again, double-delivering each message.
+            subscribe=False,
         )
         _in_receivers[stream_type.lower()] = receiver_id
         print(f"[caesar] Receiver ready: {stream_type} @ {cfg['workspace']} (rid={receiver_id})")
