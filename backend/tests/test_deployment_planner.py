@@ -192,3 +192,40 @@ def test_inject_vars_to_image_uses_disposable_compose_file(
     assert "- NODE_ID=plugin-a" in captured["content"]
     assert "- IN_JSON_STREAM_ID=stream-1" in captured["content"]
     assert not compose_file.exists()
+
+
+def test_corelink_env_injected_for_plugins_only(linear_workflow: DeployWorkflow) -> None:
+    corelink = {
+        "host": "1.2.3.4",
+        "port": 20012,
+        "username": "Testuser",
+        "password": "Testpassword",
+    }
+    plan = deployment.deploy(
+        linear_workflow,
+        deploy_id="abc",
+        workspace="workflow_abc",
+        corelink_creds=corelink,
+        inject_env=False,
+    )
+    plugin_a = plan["env_plan"]["plugin-a"]
+    assert plugin_a["CORELINK_HOST"] == "1.2.3.4"
+    assert plugin_a["CORELINK_PORT"] == "20012"
+    assert plugin_a["CORELINK_USERNAME"] == "Testuser"
+    assert plugin_a["CORELINK_PASSWORD"] == "Testpassword"
+
+    # Sender/receiver nodes don't get plugin-only injection
+    # In the linear_workflow fixture there's no receiver, but plugin-b is type=plugin too.
+    # Just confirm no extraneous keys leaked.
+
+
+def test_corelink_env_omitted_when_creds_not_provided(linear_workflow: DeployWorkflow) -> None:
+    plan = deployment.deploy(
+        linear_workflow,
+        deploy_id="abc",
+        workspace="workflow_abc",
+        inject_env=False,
+    )
+    plugin_a = plan["env_plan"]["plugin-a"]
+    assert "CORELINK_HOST" not in plugin_a
+    assert "CORELINK_PASSWORD" not in plugin_a

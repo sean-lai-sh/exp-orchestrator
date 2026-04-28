@@ -148,6 +148,7 @@ def deploy(
     workflow: DeployWorkflow,
     deploy_id: str = "local",
     workspace: str | None = None,
+    corelink_creds: Dict[str, Any] | None = None,
     inject_env: bool = False,
 ) -> Dict[str, Any]:
     if workspace is None:
@@ -174,6 +175,11 @@ def deploy(
 
     for node in deployment_queue:
         env_vars = build_env_vars(node)
+        if corelink_creds and node.type == "plugin":
+            env_vars["CORELINK_HOST"] = str(corelink_creds["host"])
+            env_vars["CORELINK_PORT"] = str(corelink_creds["port"])
+            env_vars["CORELINK_USERNAME"] = str(corelink_creds["username"])
+            env_vars["CORELINK_PASSWORD"] = str(corelink_creds["password"])
         env_plan[node.id] = env_vars
         image_name = fetch_image_name(node)
 
