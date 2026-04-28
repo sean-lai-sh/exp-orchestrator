@@ -1,1 +1,7 @@
-{}
+{
+  "corelink_demo:latest": {
+    "approved": true,
+    "added_by": "corelink-modular-demo",
+    "notes": "Demo plugin: subscribes to IN streams, transforms, publishes to OUT streams via Corelink."
+  }
+}
