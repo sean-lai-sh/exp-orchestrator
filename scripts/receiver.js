@@ -63,12 +63,18 @@ async function main() {
     process.exit(1)
   }
 
-  console.log(`Receiver connected (deployment: ${args.deployId})`)
-  console.log('Listening for messages (Ctrl+C to quit)...\n')
+  console.log(`Subscribing to deployment: ${args.deployId} ...`)
 
-  await transport.subscribe(handle, (msg) => {
-    console.log(`[received] ${msg}`)
-  })
+  try {
+    await transport.subscribe(handle, (msg) => {
+      console.log(`[received] ${msg}`)
+    })
+  } catch (e) {
+    console.error(`Subscribe failed (${args.mode}): ${e.message}`)
+    process.exit(1)
+  }
+
+  console.log('Listening for messages (Ctrl+C to quit)...\n')
 
   // Keep alive
   process.on('SIGINT', async () => {
