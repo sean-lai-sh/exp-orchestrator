@@ -6,8 +6,8 @@
   "scripts": {
     "test": "node --test 'lib/__tests__/**/*.test.js'"
   },
-  "dependencies": {},
-  "optionalDependencies": {
-    "@corelinkhub/corelink-client": "^5.1.2"
+  "dependencies": {
+    "websocket": "^1.0.34",
+    "ws": "^8.12.1"
   }
 }
