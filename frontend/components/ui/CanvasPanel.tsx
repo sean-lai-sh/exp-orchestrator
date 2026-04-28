@@ -24,10 +24,11 @@ import type { NodeType, NodeTemplate } from '../../lib/types';
 import { nodeTemplates, templatesByType } from '../../lib/nodeTemplates';
 import { Send, Inbox, Puzzle, ChevronDown, Plus, Search, Sparkles } from 'lucide-react';
 
+// Editorial palette — maps each node type to a token-driven background/foreground.
 const nodeTypesPalette = [
-  { type: 'sender', label: 'Sender', color: 'bg-blue-100', shape: 'rounded-lg', text: 'text-blue-700', icon: <Send className="inline-block mr-1 h-4 w-4 text-blue-600" /> },
-  { type: 'receiver', label: 'Receiver', color: 'bg-green-100', shape: 'rounded-lg', text: 'text-green-700', icon: <Inbox className="inline-block mr-1 h-4 w-4 text-green-600" /> },
-  { type: 'plugin', label: 'Plugin', color: 'bg-purple-100', shape: 'rounded-lg', text: 'text-purple-700', icon: <Puzzle className="inline-block mr-1 h-4 w-4 text-purple-600" /> },
+  { type: 'sender', label: 'Sender', token: 't-source', icon: <Send className="inline-block mr-1 h-4 w-4" /> },
+  { type: 'receiver', label: 'Receiver', token: 't-sink', icon: <Inbox className="inline-block mr-1 h-4 w-4" /> },
+  { type: 'plugin', label: 'Plugin', token: 't-transform', icon: <Puzzle className="inline-block mr-1 h-4 w-4" /> },
 ];
 
 interface CanvasPanelProps {
@@ -107,38 +108,60 @@ export default function CanvasPanel({ onAddNode, isSheetOpen, setIsSheetOpen, on
   return (
     <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen} modal={false}>
       <SheetTrigger asChild>
-        <Button 
-          variant="outline" 
-          className="absolute top-4 left-4 z-10"
+        <button
           onClick={() => setIsSheetOpen(!isSheetOpen)}
+          className="absolute z-10 inline-flex items-center gap-2 rounded transition-colors"
+          style={{
+            top: 72,
+            left: 16,
+            padding: '6px 10px',
+            background: 'var(--paper)',
+            border: '1px solid var(--line-strong)',
+            color: 'var(--ink-2)',
+            fontSize: 12,
+            boxShadow: 'var(--shadow-card)',
+            fontFamily: 'var(--font-sans-orch)',
+          }}
         >
-          {isSheetOpen ? 'Hide Controls' : 'Show Controls'}
-        </Button>
+          {isSheetOpen ? 'Hide library' : 'Show library'}
+          <span className="kbd">N</span>
+        </button>
       </SheetTrigger>
-      <SheetContent 
-        side="left" 
+      <SheetContent
+        side="left"
         className="w-[320px] sm:w-[380px]"
+        style={{ background: 'var(--paper)', borderColor: 'var(--line)', color: 'var(--ink)' }}
         onInteractOutside={(e) => { e.preventDefault(); }}
         onEscapeKeyDown={(e) => { e.preventDefault(); }}
       >
         <SheetHeader>
-          <SheetTitle>Node Controls</SheetTitle>
-          <SheetDescription>
-            Create and manage nodes in your workflow.
+          <div className="eyebrow">Library</div>
+          <SheetTitle style={{ fontFamily: 'var(--font-display)', fontSize: 24, letterSpacing: '-0.01em' }}>
+            Drag to canvas
+          </SheetTitle>
+          <SheetDescription style={{ color: 'var(--ink-3)' }}>
+            Quick-add nodes or browse templates by type.
           </SheetDescription>
         </SheetHeader>
         
         <div className="grid gap-4 py-4">
           {/* Quick Add Buttons */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Quick Add</label>
+            <div className="eyebrow">Quick add</div>
             <div className="flex gap-2">
               {nodeTypesPalette.map(nt => (
                 <button
                   key={nt.type}
-                  className={`px-3 py-2 ${nt.color} ${nt.shape} ${nt.text} shadow border font-semibold focus:outline-none focus:ring-2 focus:ring-blue-400 flex items-center gap-1 flex-1 justify-center text-xs`}
                   onClick={() => onAddNode(nt.type as NodeType)}
                   title={`Add Basic ${nt.label}`}
+                  className="flex flex-1 items-center justify-center gap-1 rounded-md border text-xs transition-colors"
+                  style={{
+                    padding: '8px 10px',
+                    background: `color-mix(in oklch, var(--${nt.token}) 8%, var(--paper))`,
+                    color: `var(--${nt.token})`,
+                    borderColor: `color-mix(in oklch, var(--${nt.token}) 24%, var(--line))`,
+                    fontWeight: 500,
+                  }}
                 >
                   {nt.icon}
                   {nt.label}

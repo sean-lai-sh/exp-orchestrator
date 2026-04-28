@@ -158,10 +158,17 @@ export default function ComponentPanel({
   if (!selectedNode) {
     return (
       <Sheet open={isOpen} onOpenChange={onClearSelection} modal={false}>
-        <SheetContent side="right" className="w-[300px] sm:w-[400px] no-close-button border-none">
+        <SheetContent
+          side="right"
+          className="w-[300px] sm:w-[400px] no-close-button border-none"
+          style={{ background: 'var(--paper)', color: 'var(--ink)' }}
+        >
           <SheetHeader>
-            <SheetTitle>No Node Selected</SheetTitle>
-            <SheetDescription>
+            <div className="eyebrow">Inspector</div>
+            <SheetTitle style={{ fontFamily: 'var(--font-display)', fontSize: 24, letterSpacing: '-0.01em' }}>
+              No node selected
+            </SheetTitle>
+            <SheetDescription style={{ color: 'var(--ink-3)' }}>
               Click a node on the canvas to see its properties.
             </SheetDescription>
           </SheetHeader>
@@ -174,14 +181,36 @@ export default function ComponentPanel({
 
   return (
     <Sheet open={isOpen} onOpenChange={onClearSelection} modal={false}>
-      <SheetContent side="right" className="w-[300px] sm:w-[400px] no-close-button border-none overflow-y-auto">
+      <SheetContent
+        side="right"
+        className="w-[300px] sm:w-[400px] no-close-button border-none overflow-y-auto"
+        style={{ background: 'var(--paper)', color: 'var(--ink)' }}
+      >
         <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <User className="h-4 w-4" />
-            Edit Node (ID: {selectedNode?.id})
+          <div className="flex items-center gap-2">
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 999,
+                background:
+                  nodeType === 'sender'
+                    ? 'var(--t-source)'
+                    : nodeType === 'receiver'
+                    ? 'var(--t-sink)'
+                    : 'var(--t-transform)',
+              }}
+            />
+            <span className="eyebrow">
+              {nodeType === 'sender' ? 'source' : nodeType === 'receiver' ? 'sink' : 'transform'} ·{' '}
+              {selectedNode?.id?.slice(0, 6)}
+            </span>
+          </div>
+          <SheetTitle style={{ fontFamily: 'var(--font-display)', fontSize: 24, letterSpacing: '-0.01em' }}>
+            {formData.name || 'Untitled node'}
           </SheetTitle>
-          <SheetDescription>
-            Modify the properties of your {nodeType} node.
+          <SheetDescription style={{ color: 'var(--ink-3)' }}>
+            {formData.description || `Modify the properties of your ${nodeType} node.`}
           </SheetDescription>
         </SheetHeader>
         

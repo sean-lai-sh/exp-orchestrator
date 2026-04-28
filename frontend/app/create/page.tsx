@@ -1,26 +1,19 @@
 'use client';
 
-// import { RoomProvider } from "../liveblocks.config"; 
-// import LiveblocksMinimalCanvas from "./components/LiveblocksMinimalCanvas"; 
-// import { LiveList, LiveObject } from "@liveblocks/client"; 
-// import type { StorageNodeData, StorageEdgeData } from "../liveblocks.config"; 
+import { useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
+import MinimalCanvas from "@/components/canvas/MinimalCanvas";
 
-import MinimalCanvas from "../../components/canvas/MinimalCanvas"; // Focus on MinimalCanvas
+function CreateContent() {
+  const searchParams = useSearchParams();
+  const projectId = searchParams.get('project');
+  return <MinimalCanvas projectId={projectId} />;
+}
 
 export default function CreatePage() {
   return (
-    // <RoomProvider
-    //   id="my-liveblocks-livelist-room" 
-    //   initialPresence={{ cursor: null }}
-    //   initialStorage={{
-    //     nodes: new LiveList<LiveObject<StorageNodeData>>([]), 
-    //     edges: new LiveList<LiveObject<StorageEdgeData>>([]), 
-    //   }}
-    // >
-    //   <div className="w-full h-screen bg-gray-100">
-    //     <LiveblocksMinimalCanvas />
-    //   </div>
-    // </RoomProvider>
-    <MinimalCanvas /> // Render MinimalCanvas directly
+    <Suspense>
+      <CreateContent />
+    </Suspense>
   );
-} 
+}

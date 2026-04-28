@@ -2,11 +2,117 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Orchestrator UI Revamp — Design Tokens
+   Light-first. Editorial / warm-neutral / playful-infra hybrid.
+   Three palette directions live side-by-side via [data-palette] selectors.
+*/
+:root {
+  /* Type stacks — first var is set by next/font in layout.tsx */
+  --font-sans-orch: var(--font-inter-tight), "Inter Tight", "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-instrument-serif), "Instrument Serif", "Tiempos", Georgia, serif;
+  --font-mono-orch: var(--font-jetbrains-mono), "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Warm neutrals */
+  --paper:        #FBFAF7;
+  --paper-2:      #F4F2EC;
+  --paper-3:      #ECE9E1;
+  --ink:          #1A1815;
+  --ink-2:        #3B3833;
+  --ink-3:        #6B665E;
+  --ink-4:        #9A948A;
+  --line:         #E4E0D6;
+  --line-strong:  #CFC9BC;
+
+  /* Accents — editorial defaults */
+  --orch-accent:       #1A1815;
+  --orch-accent-soft:  #ECE9E1;
+  --signal:            #2F6F4F;
+  --warn:              #B45619;
+  --error:             #A33B2A;
+
+  /* Node "type" colors */
+  --t-source:      #2F6F4F;
+  --t-transform:   #6B4C9A;
+  --t-sink:        #1F5B8A;
+  --t-source-bg:   color-mix(in oklch, var(--t-source) 8%, var(--paper));
+  --t-transform-bg: color-mix(in oklch, var(--t-transform) 8%, var(--paper));
+  --t-sink-bg:     color-mix(in oklch, var(--t-sink) 8%, var(--paper));
+
+  --shadow-card: 0 1px 0 rgba(20,18,14,.04), 0 4px 20px -6px rgba(20,18,14,.08);
+  --shadow-pop:  0 1px 0 rgba(20,18,14,.06), 0 24px 48px -16px rgba(20,18,14,.18);
+}
+
+[data-palette="playful"] {
+  --paper:        #FFFDF8;
+  --paper-2:      #FBF3E6;
+  --paper-3:      #F5E8D0;
+  --orch-accent:       #E85D2C;
+  --orch-accent-soft:  #FFE6D5;
+  --signal:       #2C7A5B;
+  --t-source:     #2C7A5B;
+  --t-transform:  #C2410C;
+  --t-sink:       #1E5BA8;
+}
+
+[data-palette="warm"] {
+  --paper:        #FDFCFA;
+  --paper-2:      #F4F1EB;
+  --paper-3:      #ECE6DA;
+  --orch-accent:       #2F6F4F;
+  --orch-accent-soft:  #E2EEDF;
+  --t-source:     #2F6F4F;
+  --t-transform:  #8B5E2A;
+  --t-sink:       #355A7A;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+  .font-serif-display { font-family: var(--font-display); }
+  .font-mono-orch { font-family: var(--font-mono-orch); font-feature-settings: "zero", "ss01"; }
+  .font-sans-orch { font-family: var(--font-sans-orch); }
+  .surface-paper { background: var(--paper); color: var(--ink); }
+  .surface-paper-2 { background: var(--paper-2); color: var(--ink); }
 }
+
+/* Editorial primitives shared across screens */
+.kbd {
+  font-family: var(--font-mono-orch);
+  font-size: 11px;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--ink-3);
+  background: var(--paper);
+  display: inline-block;
+  line-height: 1;
+}
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: var(--font-mono-orch);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-2);
+  background: var(--paper);
+  letter-spacing: -0.01em;
+}
+.chip .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--ink-3); }
+
+.eyebrow {
+  font-size: 10px;
+  font-family: var(--font-mono-orch);
+  color: var(--ink-4);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+@keyframes flow-dash { to { stroke-dashoffset: -24; } }
+@keyframes flow-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
 
 
 

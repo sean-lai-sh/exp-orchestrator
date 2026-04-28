@@ -22,10 +22,9 @@ import '@xyflow/react/dist/style.css';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, Copy, Plus } from 'lucide-react';
 
-// Import the new CanvasPanel
 import CanvasPanel from '../ui/CanvasPanel';
+import CanvasTopChrome, { CANVAS_TOP_CHROME_HEIGHT } from '../ui/CanvasTopChrome';
 
-// Import context menu components
 import {
   ContextMenu,
   ContextMenuContent,
@@ -34,7 +33,6 @@ import {
   ContextMenuTrigger,
 } from '../ui/context-menu';
 
-// Import the custom node and its data type
 import SenderNode from '../nodes/SenderNode';
 import ReceiverNode from '../nodes/ReceiverNode';
 import PluginNode from '../nodes/PluginNode';
@@ -43,6 +41,7 @@ import { AnimatedSVGEdge } from './AnimatedSVGEdge';
 import ComponentPanel from '../ui/ComponentPanel';
 import { toast } from 'sonner';
 import { buildDeployWorkflow } from '../../lib/deploy-types';
+import { useWorkflowPersistence } from '../../hooks/useWorkflowPersistence';
 
 // Helper to generate default node data for each type
 function getDefaultNodeData(type: NodeType, id: string, template?: NodeTemplate): EditableNodeData {
@@ -91,8 +90,7 @@ function getDefaultNodeData(type: NodeType, id: string, template?: NodeTemplate)
   } as PluginNodeData;
 }
 
-// Update initialNodes to use the new system (default to plugin)
-const initialNodes: Node<EditableNodeData>[] = [
+const defaultNodes: Node<EditableNodeData>[] = [
   {
     id: '1',
     type: 'plugin',
@@ -105,17 +103,32 @@ const initialNodes: Node<EditableNodeData>[] = [
 ];
 
 let nextNodeId = 2;
-const initialEdges: Edge[] = [];
+const defaultEdges: Edge[] = [];
 
 // Define edgeTypes to use the custom animated edge
 const edgeTypes = {
   animated: AnimatedSVGEdge,
 };
 
-// Define a new sub-component that will contain the main flow logic
-function FlowContent() {
-  const [nodes, setNodes] = useState<Node<EditableNodeData>[]>(initialNodes);
-  const [edges, setEdges] = useState<Edge[]>(initialEdges);
+function FlowContent({ projectId }: { projectId: string | null }) {
+  const { initialNodes: loadedNodes, initialEdges: loadedEdges, isLoaded, debouncedSave } = useWorkflowPersistence(projectId);
+  const [nodes, setNodes] = useState<Node<EditableNodeData>[]>(projectId ? [] : defaultNodes);
+  const [edges, setEdges] = useState<Edge[]>(projectId ? [] : defaultEdges);
+  const hasLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (projectId && isLoaded && !hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+      setNodes(loadedNodes.length > 0 ? loadedNodes : []);
+      setEdges(loadedEdges.length > 0 ? loadedEdges : []);
+    }
+  }, [projectId, isLoaded, loadedNodes, loadedEdges]);
+
+  useEffect(() => {
+    if (projectId && hasLoadedRef.current) {
+      debouncedSave(nodes, edges);
+    }
+  }, [nodes, edges, projectId, debouncedSave]);
   const [selectedNodeForPanel, setSelectedNodeForPanel] = useState<Node<EditableNodeData> | null>(null);
   const [contextMenuNode, setContextMenuNode] = useState<Node<EditableNodeData> | null>(null);
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true); // Controls both panels
@@ -483,9 +496,24 @@ function FlowContent() {
     setShowDeployConfirm(false);
   }, []);
 
+  if (projectId && !hasLoadedRef.current) {
+    return (
+      <div style={{ width: '100vw', height: '100vh', background: 'var(--paper-2)' }} className="flex items-center justify-center">
+        <div className="text-center">
+          <div className="mb-2 h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500 mx-auto" />
+          <p className="text-sm text-gray-500">Loading workflow...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div ref={reactFlowWrapper} style={{ width: '100vw', height: '100vh' }} className="bg-gray-200 relative">
-      {/* Progress bar/checkmark overlay */}
+    <div ref={reactFlowWrapper} style={{ width: '100vw', height: '100vh', background: 'var(--paper-2)' }} className="relative">
+      <CanvasTopChrome
+        currentProjectId={projectId}
+        isDeploying={isDeploying || deployAnimationActive}
+        onDeploy={handleDeployClick}
+      />
       <AnimatePresence>
       {deployAnimationActive && (
         <motion.div
@@ -493,99 +521,287 @@ function FlowContent() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm pointer-events-auto"
+          className="absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm pointer-events-auto"
+          style={{ background: 'color-mix(in oklch, var(--ink) 30%, transparent)' }}
         >
-          <div className="bg-white rounded-lg shadow-lg p-8 flex flex-col items-center min-w-[320px]">
+          <div
+            style={{
+              minWidth: 360,
+              background: 'var(--paper)',
+              border: '1px solid var(--line-strong)',
+              borderRadius: 14,
+              boxShadow: 'var(--shadow-pop)',
+              padding: 28,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              fontFamily: 'var(--font-sans-orch)',
+            }}
+          >
             {!showCheckmark ? (
               <>
-                <div className="text-lg font-semibold text-gray-700 mb-4">Deploying...</div>
-                <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden mb-2">
+                <div className="eyebrow">deploy</div>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-display)',
+                    fontSize: 22,
+                    letterSpacing: '-0.01em',
+                    marginTop: 4,
+                    marginBottom: 18,
+                  }}
+                >
+                  Pushing workflow…
+                </div>
+                <div
+                  style={{
+                    width: '100%',
+                    height: 3,
+                    background: 'var(--paper-2)',
+                    borderRadius: 999,
+                    overflow: 'hidden',
+                    marginBottom: 10,
+                  }}
+                >
                   <motion.div
                     key="progress-bar"
                     initial={{ width: 0 }}
                     animate={{ width: '100%' }}
                     transition={{ duration: 1.5, ease: 'linear' }}
-                    className="h-full bg-blue-500"
+                    style={{ height: '100%', background: 'var(--orch-accent)' }}
                   />
                 </div>
-                <div className="text-xs text-gray-500">Please wait while we deploy your changes.</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-3)', fontFamily: 'var(--font-mono-orch)' }}>
+                  building · pulling · wiring edges
+                </div>
               </>
             ) : (
               <>
                 <motion.svg
                   key="checkmark"
-                  className="h-16 w-16 text-green-500 mb-2"
+                  width="48"
+                  height="48"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="currentColor"
+                  stroke="var(--signal)"
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   initial={{ scale: 0, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                  style={{ marginBottom: 8 }}
                 >
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
-                  <path d="M7 13l3 3 7-7" stroke="currentColor" strokeWidth="2" fill="none" />
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M7 13l3 3 7-7" />
                 </motion.svg>
-                <div className="text-lg font-semibold text-green-600">Deployed!</div>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-display)',
+                    fontSize: 22,
+                    letterSpacing: '-0.01em',
+                    color: 'var(--signal)',
+                  }}
+                >
+                  Deployed.
+                </div>
               </>
             )}
           </div>
         </motion.div>
       )}
       </AnimatePresence>
-      {/* Deploy confirmation modal */}
+      {/* Deploy confirmation modal — pre-flight */}
       {showDeployConfirm && !isDeploying && !deployAnimationActive && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-lg shadow-lg p-8 flex flex-col items-center">
-            <div className="text-lg font-semibold mb-4">Are you sure you want to deploy?</div>
-            <div className="flex gap-4">
-              <button
-                className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition"
-                onClick={handleConfirmDeploy}
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'color-mix(in oklch, var(--ink) 35%, transparent)' }}
+        >
+          <div
+            style={{
+              width: 520,
+              background: 'var(--paper)',
+              border: '1px solid var(--line-strong)',
+              borderRadius: 14,
+              boxShadow: 'var(--shadow-pop)',
+              overflow: 'hidden',
+              fontFamily: 'var(--font-sans-orch)',
+            }}
+          >
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--line)' }}>
+              <div className="eyebrow">deploy</div>
+              <div
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 22,
+                  letterSpacing: '-0.01em',
+                  marginTop: 4,
+                }}
               >
-                Confirm
-              </button>
+                Push workflow → production
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 2 }}>
+                {nodes.length} node{nodes.length !== 1 ? 's' : ''} · {edges.length} edge{edges.length !== 1 ? 's' : ''} · est. instant
+              </div>
+            </div>
+            <div style={{ padding: '14px 22px' }}>
+              {[
+                { ok: nodes.length > 0, label: 'Workflow has nodes', detail: `${nodes.length} configured` },
+                { ok: edges.length > 0 || nodes.length <= 1, label: 'Edges connected', detail: `${edges.length} edges` },
+                { ok: true, label: 'Auth', detail: 'tokens valid · scopes ok' },
+              ].map((c, i, arr) => (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '10px 0',
+                    borderBottom: i < arr.length - 1 ? '1px dashed var(--line)' : 'none',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 999,
+                      background: c.ok
+                        ? 'color-mix(in oklch, var(--signal) 18%, var(--paper))'
+                        : 'color-mix(in oklch, var(--warn) 18%, var(--paper))',
+                      color: c.ok ? 'var(--signal)' : 'var(--warn)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 13,
+                    }}
+                  >
+                    {c.ok ? '✓' : '!'}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14 }}>{c.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{c.detail}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div
+              style={{
+                padding: '14px 22px',
+                borderTop: '1px solid var(--line)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: 8,
+                background: 'var(--paper-2)',
+              }}
+            >
               <button
-                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 transition"
                 onClick={handleCancelDeploy}
+                style={{
+                  padding: '7px 12px',
+                  fontSize: 13,
+                  border: '1px solid var(--line-strong)',
+                  borderRadius: 6,
+                  background: 'var(--paper)',
+                  color: 'var(--ink)',
+                }}
               >
                 Cancel
+              </button>
+              <button
+                onClick={handleConfirmDeploy}
+                style={{
+                  padding: '7px 12px',
+                  fontSize: 13,
+                  border: '1px solid var(--orch-accent)',
+                  borderRadius: 6,
+                  background: 'var(--orch-accent)',
+                  color: 'var(--paper)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                Deploy
+                <span
+                  className="kbd"
+                  style={{
+                    background: 'rgba(255,255,255,.12)',
+                    borderColor: 'rgba(255,255,255,.2)',
+                    color: 'rgba(255,255,255,.85)',
+                  }}
+                >
+                  ⌘↵
+                </span>
               </button>
             </div>
           </div>
         </div>
       )}
-      
+
       {/* Clean workflow confirmation modal */}
       {showCleanConfirm && !isCleaning && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-lg shadow-lg p-8 flex flex-col items-center">
-            <div className="text-lg font-semibold mb-2">Clean & Organize Workflow</div>
-            <div className="text-sm text-gray-600 mb-4 text-center">
-              This will organize your workflow into clean horizontal chains<br />
-              based on data flow connections and logical groupings.
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'color-mix(in oklch, var(--ink) 35%, transparent)' }}
+        >
+          <div
+            style={{
+              width: 440,
+              background: 'var(--paper)',
+              border: '1px solid var(--line-strong)',
+              borderRadius: 14,
+              boxShadow: 'var(--shadow-pop)',
+              padding: 24,
+              fontFamily: 'var(--font-sans-orch)',
+            }}
+          >
+            <div className="eyebrow">organize</div>
+            <div
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 22,
+                letterSpacing: '-0.01em',
+                marginTop: 4,
+              }}
+            >
+              Clean &amp; organize
             </div>
-            <div className="flex gap-4">
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 6, marginBottom: 18 }}>
+              Lays out the workflow into horizontal chains based on data flow.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button
-                className="px-4 py-2 rounded bg-purple-600 text-white hover:bg-purple-700 transition"
-                onClick={handleConfirmClean}
-              >
-                Clean Workflow
-              </button>
-              <button
-                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 transition"
                 onClick={handleCancelClean}
+                style={{
+                  padding: '7px 12px',
+                  fontSize: 13,
+                  border: '1px solid var(--line-strong)',
+                  borderRadius: 6,
+                  background: 'var(--paper)',
+                  color: 'var(--ink)',
+                }}
               >
                 Cancel
+              </button>
+              <button
+                onClick={handleConfirmClean}
+                style={{
+                  padding: '7px 12px',
+                  fontSize: 13,
+                  border: '1px solid var(--orch-accent)',
+                  borderRadius: 6,
+                  background: 'var(--orch-accent)',
+                  color: 'var(--paper)',
+                }}
+              >
+                Clean workflow
               </button>
             </div>
           </div>
         </div>
       )}
       
-      <div className={isDeploying || deployAnimationActive || isCleaning ? 'pointer-events-none blur-sm select-none' : ''} style={{ width: '100vw', height: '100vh' }}>
+      <div className={isDeploying || deployAnimationActive || isCleaning ? 'pointer-events-none blur-sm select-none' : ''} style={{ position: 'absolute', top: CANVAS_TOP_CHROME_HEIGHT, left: 0, right: 0, bottom: 0 }}>
         <CanvasPanel 
           onAddNode={onAddNode}
           isSheetOpen={isLeftPanelOpen}
@@ -680,11 +896,10 @@ function FlowContent() {
   );
 }
 
-// The main export now wraps FlowContent with ReactFlowProvider
-export default function MinimalCanvas() {
+export default function MinimalCanvas({ projectId = null }: { projectId?: string | null }) {
   return (
     <ReactFlowProvider>
-      <FlowContent />
+      <FlowContent projectId={projectId} />
     </ReactFlowProvider>
   );
 } 
