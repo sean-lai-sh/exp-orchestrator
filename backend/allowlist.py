@@ -13,23 +13,21 @@ ALLOWLIST_PATH = Path(__file__).parent / "config" / "allowed_images.json"
 
 def load_allowlist() -> dict[str, dict[str, Any]]:
     """Load the persisted image allowlist."""
-    if not ALLOWLIST_PATH.exists():
+    try:
+        content = ALLOWLIST_PATH.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
         return {}
 
-    content = ALLOWLIST_PATH.read_text(encoding="utf-8").strip()
     if not content:
         return {}
 
     return json.loads(content)
 
 
-def _resolve_runtime(node: DeployNode) -> str | None:
-    return node.runtime or node.data.get("runtime") or node.data.get("containerImage") or None
-
-
-def is_approved(image_ref: str) -> bool:
+def is_approved(image_ref: str, allowlist: dict[str, dict[str, Any]] | None = None) -> bool:
     """Return whether a runtime image reference is approved for execution."""
-    allowlist = load_allowlist()
+    if allowlist is None:
+        allowlist = load_allowlist()
 
     if image_ref in allowlist:
         return bool(allowlist[image_ref].get("approved", False))
@@ -43,14 +41,15 @@ def is_approved(image_ref: str) -> bool:
 
 def check_workflow_images(nodes: list[DeployNode]) -> dict[str, dict[str, Any]]:
     """Inspect workflow runtime images and report whether each one is approved."""
+    allowlist = load_allowlist()
     results: dict[str, dict[str, Any]] = {}
 
     for node in nodes:
-        runtime = _resolve_runtime(node)
+        runtime = node.resolve_runtime()
         if runtime is None:
             continue
 
-        approved = is_approved(runtime)
+        approved = is_approved(runtime, allowlist)
         results[node.id] = {
             "image": runtime,
             "approved": approved,

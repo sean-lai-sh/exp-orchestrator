@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from allocator import AllocationDecision, allocate_nodes
+from allocator import AllocationDecision, AllocationStrategy, allocate_nodes
 from corelink_health import CorelinkStatus, HealthReport
 
 
