@@ -3,5 +3,10 @@
     "approved": true,
     "added_by": "corelink-modular-demo",
     "notes": "Demo plugin: subscribes to IN streams, transforms, publishes to OUT streams via Corelink."
+  },
+  "caesar_cipher:latest": {
+    "approved": true,
+    "added_by": "corelink-modular-demo",
+    "notes": "Caesar cipher plugin: shifts each alphabetic character by CAESAR_SHIFT (default 10). Same Corelink wiring as corelink_demo."
   }
 }
