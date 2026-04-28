@@ -77,7 +77,14 @@ async function subscribe(handle, onMessage) {
 }
 
 async function close(handle) {
-  await corelink.exit()
+  // The vendored corelink.lib.js's exit() throws ERR_INVALID_ARG_TYPE on
+  // shutdown (calls process.exit() with a non-number). Swallow it — we're
+  // tearing down anyway and the unhandled rejection just spams the console.
+  try {
+    await corelink.exit()
+  } catch {
+    // intentionally ignored
+  }
 }
 
 module.exports = { connect, send, subscribe, close }
