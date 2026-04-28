@@ -53,8 +53,11 @@ async def _on_data(data: bytes, stream_id: int, header: dict) -> None:
     except Exception as e:
         print(f"[demo-plugin] transform error on stream_id={stream_id}: {e}")
         return
+    # Python corelink.send expects str (it calls .encode() internally).
+    # _transform returns bytes; decode with `replace` so non-UTF-8 still ships.
+    text = result.decode("utf-8", errors="replace")
     for sid in _out_senders.values():
-        await corelink.send(sid, result)
+        await corelink.send(sid, text)
 
 
 async def _on_stream_update(message: dict, key: str) -> None:
