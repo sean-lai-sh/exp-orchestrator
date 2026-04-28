@@ -20,6 +20,7 @@ import uvicorn
 from fastapi import FastAPI
 
 _out_senders: dict[str, int] = {}
+_connected: bool = False
 
 
 def _parse_stream_env(prefix: str) -> dict[str, dict]:
@@ -47,7 +48,7 @@ async def _on_data(data: bytes, stream_id: int, header: dict) -> None:
     try:
         result = _transform(data)
     except Exception as e:
-        print(f"[demo-plugin] transform error: {e}")
+        print(f"[demo-plugin] transform error on stream_id={stream_id}: {e}")
         return
     for sid in _out_senders.values():
         await corelink.send(sid, result)
@@ -64,6 +65,8 @@ async def _corelink_loop() -> None:
         return
 
     await corelink.connect(username, password, host, port)
+    global _connected
+    _connected = True
     print(f"[demo-plugin] Connected to Corelink at {host}:{port}")
 
     await corelink.set_data_callback(_on_data)
@@ -110,6 +113,16 @@ app = FastAPI(lifespan=_lifespan)
 
 @app.get("/health")
 def health():
+    # Returns 503 when Corelink isn't connected so that the orchestrator
+    # (and human operators) can distinguish "container running" from
+    # "container running AND data plane wired up". Liveness-style probes
+    # should use a different endpoint if they want process-only health.
+    if not _connected:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "reason": "corelink_disconnected"},
+        )
     return {"ok": True}
 
 
@@ -120,7 +133,7 @@ def run_status():
         "in_streams": _parse_stream_env("IN_"),
         "out_streams": _parse_stream_env("OUT_"),
         "out_sender_ids": _out_senders,
-        "corelink_connected": bool(_out_senders),
+        "corelink_connected": _connected,
     }
 
 
