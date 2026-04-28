@@ -76,12 +76,11 @@ async function main() {
 
   console.log('Listening for messages (Ctrl+C to quit)...\n')
 
-  // Keep alive
-  process.on('SIGINT', async () => {
-    await transport.close(handle).catch(() => {})
-    console.log('\nDone.')
-    process.exit(0)
-  })
+  // Keep alive. Do NOT register our own SIGINT handler — the vendored
+  // corelink.lib.js already installs one that calls its exit() and
+  // process.exit(). Adding ours on top makes exit() fire twice and
+  // dumps duplicate "Trying to exit. options { streamIDs: [...] }"
+  // messages to the console.
   await new Promise(() => {})
 }
 
