@@ -58,10 +58,30 @@ async def provision_deployment(deploy_id: str) -> CorelinkProvisionResult:
         raise CorelinkAdminError(f"provision failed: HTTP {resp.status_code} {resp.text}")
 
     body = resp.json()
-    return CorelinkProvisionResult(
-        workspace=body["workspace"],
-        host=body["host"],
-        port=int(body["port"]),
-        username=body["username"],
-        password=body["password"],
-    )
+    try:
+        return CorelinkProvisionResult(
+            workspace=body["workspace"],
+            host=body["host"],
+            port=int(body["port"]),
+            username=body["username"],
+            password=body["password"],
+        )
+    except (KeyError, ValueError, TypeError) as e:
+        raise CorelinkAdminError(f"corelink returned malformed provision response: {e}") from e
+
+
+async def unprovision_deployment(deploy_id: str) -> None:
+    """DELETE /api/provision/<deploy_id>. Treats 200 and 404 as success."""
+    url = f"{_server_url()}/api/provision/{deploy_id}"
+    headers = {"X-Provision-Token": _provision_token()}
+    try:
+        async with httpx.AsyncClient(verify=False, timeout=_DEFAULT_TIMEOUT) as client:
+            resp = await client.delete(url, headers=headers)
+    except httpx.HTTPError as e:
+        raise CorelinkAdminError(f"corelink unreachable: {e}") from e
+
+    if resp.status_code in (200, 404):
+        return
+    if resp.status_code in (401, 403):
+        raise CorelinkAdminError(f"corelink rejected provision token (HTTP {resp.status_code})")
+    raise CorelinkAdminError(f"unprovision failed: HTTP {resp.status_code} {resp.text}")

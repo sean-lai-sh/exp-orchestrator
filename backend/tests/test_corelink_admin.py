@@ -167,3 +167,93 @@ async def test_provision_deployment_server_error(monkeypatch):
 
     with pytest.raises(ca.CorelinkAdminError, match="HTTP 500"):
         await ca.provision_deployment("abc")
+
+
+@pytest.mark.asyncio
+async def test_unprovision_deployment_happy(monkeypatch):
+    import corelink_admin as ca
+
+    monkeypatch.setenv("CORELINK_HOST", "localhost")
+    monkeypatch.setenv("CORELINK_PORT", "20012")
+    monkeypatch.setenv("CORELINK_PROVISION_TOKEN", "secret")
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+        def json(self): return {}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *exc): return False
+        async def delete(self, url, headers=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            return FakeResponse()
+
+    monkeypatch.setattr(ca, "httpx", type("M", (), {
+        "AsyncClient": FakeAsyncClient,
+        "HTTPError": ca.httpx.HTTPError,
+    }))
+
+    await ca.unprovision_deployment("abc12345")
+    assert captured["url"] == "https://localhost:20012/api/provision/abc12345"
+    assert captured["headers"]["X-Provision-Token"] == "secret"
+
+
+@pytest.mark.asyncio
+async def test_unprovision_deployment_404_is_success(monkeypatch):
+    import corelink_admin as ca
+
+    monkeypatch.setenv("CORELINK_HOST", "localhost")
+    monkeypatch.setenv("CORELINK_PORT", "20012")
+    monkeypatch.setenv("CORELINK_PROVISION_TOKEN", "secret")
+
+    class FakeResponse:
+        status_code = 404
+        text = "{}"
+        def json(self): return {}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *exc): return False
+        async def delete(self, *a, **k): return FakeResponse()
+
+    monkeypatch.setattr(ca, "httpx", type("M", (), {
+        "AsyncClient": FakeAsyncClient,
+        "HTTPError": ca.httpx.HTTPError,
+    }))
+
+    # Should NOT raise
+    await ca.unprovision_deployment("abc")
+
+
+@pytest.mark.asyncio
+async def test_provision_deployment_malformed_response_raises_admin_error(monkeypatch):
+    import corelink_admin as ca
+
+    monkeypatch.setenv("CORELINK_HOST", "localhost")
+    monkeypatch.setenv("CORELINK_PORT", "20012")
+    monkeypatch.setenv("CORELINK_PROVISION_TOKEN", "secret")
+
+    class FakeResponse:
+        status_code = 200
+        text = '{"workspace": "wf"}'
+        def json(self): return {"workspace": "wf"}  # missing host/port/username/password
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *exc): return False
+        async def post(self, *a, **k): return FakeResponse()
+
+    monkeypatch.setattr(ca, "httpx", type("M", (), {
+        "AsyncClient": FakeAsyncClient,
+        "HTTPError": ca.httpx.HTTPError,
+    }))
+
+    with pytest.raises(ca.CorelinkAdminError, match="malformed provision response"):
+        await ca.provision_deployment("abc")
