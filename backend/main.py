@@ -231,6 +231,10 @@ async def deploy_and_execute_v2(
         status = await ex.start(spec)
         results.append(asdict(status))
 
+    # NOTE: demo-only — the provisioning blob (incl. corelink password) is stored
+    # in process memory and re-emitted by /deployments/{id}/credentials, which has
+    # no AuthN/AuthZ. Pre-prod hardening must gate that endpoint or scrub the
+    # password before returning it.
     deployments[deploy_id] = {
         "plan": plan,
         "execution": results,

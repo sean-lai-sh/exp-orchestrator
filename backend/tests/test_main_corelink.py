@@ -16,8 +16,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import corelink_admin
 import main as main_module
-from executors import ContainerStatus
-from executors.noop import NoopExecutor
 
 
 def _workflow_payload():
