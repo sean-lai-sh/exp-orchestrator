@@ -47,25 +47,22 @@ async function send(handle, message) {
 
 async function subscribe(handle, onMessage) {
   if (handle.role !== 'receiver') throw new Error('subscribe() called on non-receiver handle')
-  // Track streamIDs we've already subscribed to so we don't double-subscribe
-  // (which makes corelink-server deliver each message multiple times).
+  // Dedupe explicit subscribe() calls — the JS lib's createReceiver does NOT
+  // auto-subscribe (no `subscribe` field in its request), so we DO need to
+  // call subscribe() ourselves for each stream. But on('receiver') alerts
+  // can re-fire for senders we already see, and we want at most one
+  // subscription per sender so the corelink-server delivers each message
+  // exactly once.
   const subscribed = new Set()
   const safeSubscribe = async (sid) => {
     if (sid == null || subscribed.has(sid)) return
     subscribed.add(sid)
     await corelink.subscribe({ streamIDs: [sid] })
   }
-  // on('receiver') fires for senders that arrive AFTER our createReceiver call.
   corelink.on('receiver', async (data) => { await safeSubscribe(data.streamID) })
   corelink.on('data', (streamID, data) => {
     onMessage(data.toString('utf-8'))
   })
-  // streamIDs filter is by NUMERIC server-assigned ID, not the orchestrator's
-  // logical stream_id string — pass [] and rely on workspace+type filtering.
-  // createReceiver auto-subscribes the streamList it returns (server-side
-  // `subscribe: true`), so we record those IDs in our dedupe set rather than
-  // subscribing again — re-subscribing would land us in the targets list
-  // twice and double-deliver every message.
   const streamList = await corelink.createReceiver({
     workspace: handle.cred.workspace,
     streamIDs: [],
@@ -74,7 +71,7 @@ async function subscribe(handle, onMessage) {
     alert: true,
   })
   for (const item of streamList || []) {
-    if (item && item.streamID != null) subscribed.add(item.streamID)
+    await safeSubscribe(item && item.streamID)
   }
   return async () => { await corelink.exit() }
 }
