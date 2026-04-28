@@ -20,6 +20,9 @@ import uvicorn
 from fastapi import FastAPI
 
 _out_senders: dict[str, int] = {}
+# data_type (lowercase) → receiver_id, populated as create_receiver returns.
+# Used to route stream-alert subscriptions to the correct receiver.
+_in_receivers: dict[str, int] = {}
 _connected: bool = False
 
 
@@ -58,17 +61,29 @@ async def _on_stream_update(message: dict, key: str) -> None:
     """Subscribe to new senders that arrive after we created our receiver.
 
     Corelink fires this callback (key='update') for every alert. Stream-alert
-    messages carry a `streamID` we should subscribe to so the plugin actually
-    receives data from senders that connect later (e.g., the user starting
-    sender.js after the deploy).
+    messages carry a `streamID` and a `type` indicating which of our receivers
+    should subscribe. The Python corelink client's API is
+    subscribe_to_stream(receiver_id, stream_id) — we look up the receiver_id
+    by data type (the message's 'type' field, mirroring create_receiver's
+    data_type).
     """
     sid = message.get("streamID")
     if sid is None:
         return
-    try:
-        await corelink.subscribe(stream_ids=[sid])
-    except Exception as e:
-        print(f"[demo-plugin] subscribe error for stream_id={sid}: {e}")
+    msg_type = (message.get("type") or "").lower()
+    receiver_id = _in_receivers.get(msg_type)
+    if receiver_id is None:
+        # Fall back to subscribing on every receiver we have, in case the
+        # type field is missing or differently cased.
+        targets = list(_in_receivers.values())
+    else:
+        targets = [receiver_id]
+    for rid in targets:
+        try:
+            await corelink.subscribe_to_stream(rid, sid)
+            print(f"[demo-plugin] subscribed receiver {rid} to stream {sid} (type={msg_type})")
+        except Exception as e:
+            print(f"[demo-plugin] subscribe error r={rid} s={sid}: {e}")
 
 
 async def _corelink_loop() -> None:
@@ -97,14 +112,15 @@ async def _corelink_loop() -> None:
         # stream_ids MUST be empty — they filter by NUMERIC server-assigned IDs,
         # not the orchestrator's logical stream_id string. The alert=True flag
         # delivers receiver-callbacks for matching senders.
-        await corelink.create_receiver(
+        receiver_id = await corelink.create_receiver(
             workspace=cfg["workspace"],
             protocol="ws",
             data_type=stream_type.lower(),
             stream_ids=[],
             alert=True,
         )
-        print(f"[demo-plugin] Receiver ready: {stream_type} @ {cfg['workspace']}")
+        _in_receivers[stream_type.lower()] = receiver_id
+        print(f"[demo-plugin] Receiver ready: {stream_type} @ {cfg['workspace']} (rid={receiver_id})")
 
     out_streams = _parse_stream_env("OUT_")
     for stream_type, cfg in out_streams.items():
