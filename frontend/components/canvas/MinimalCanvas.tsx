@@ -460,8 +460,25 @@ function FlowContent({ projectId }: { projectId: string | null }) {
           });
         }
       } else {
-        toast.success('Deploy plan generated', {
-          description: `${data.node_count} nodes, ${data.edge_count} edges queued`,
+        const deployId: string | undefined = data.deploy_id;
+        const plan = data.plan ?? {};
+        const nodeCount = plan.node_count ?? data.node_count ?? '?';
+        const edgeCount = plan.edge_count ?? data.edge_count ?? '?';
+        const description = deployId
+          ? `deploy_id: ${deployId} — ${nodeCount} nodes, ${edgeCount} edges`
+          : `${nodeCount} nodes, ${edgeCount} edges queued`;
+        toast.success('Deployed', {
+          description,
+          duration: 30_000,
+          action: deployId
+            ? {
+                label: 'Copy ID',
+                onClick: () => {
+                  void navigator.clipboard?.writeText(deployId).catch(() => undefined);
+                  toast.message('Copied deploy_id to clipboard');
+                },
+              }
+            : undefined,
         });
       }
     } catch {
