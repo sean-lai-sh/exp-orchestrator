@@ -21,6 +21,12 @@ from fastapi import FastAPI
 
 _out_senders: dict[str, int] = {}
 _in_receivers: dict[str, int] = {}
+# Track (receiver_id, sender_stream_id) pairs we've already subscribed to —
+# corelink.create_receiver already auto-subscribes via subscribe=True for
+# pre-existing matching senders, and same-user alerts can re-fire for senders
+# we already see. Without dedupe, _on_data fires twice per message and we
+# emit duplicate ciphertext.
+_subscribed_pairs: set[tuple[int, int]] = set()
 _connected: bool = False
 _SHIFT: int = int(os.environ.get("CAESAR_SHIFT", "10"))
 
@@ -74,6 +80,9 @@ async def _on_stream_update(message: dict, key: str) -> None:
     receiver_id = _in_receivers.get(msg_type)
     targets = [receiver_id] if receiver_id is not None else list(_in_receivers.values())
     for rid in targets:
+        if (rid, sid) in _subscribed_pairs:
+            continue
+        _subscribed_pairs.add((rid, sid))
         try:
             await corelink.subscribe_to_stream(rid, sid)
             print(f"[caesar] subscribed receiver {rid} to stream {sid} (type={msg_type})")
