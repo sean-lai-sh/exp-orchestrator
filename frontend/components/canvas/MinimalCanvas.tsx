@@ -460,7 +460,12 @@ function FlowContent({ projectId }: { projectId: string | null }) {
 
     try {
       const payload = buildDeployWorkflow(nodes, edges);
-      const res = await fetch('/api/deploy?inject_env=true', {
+      // No inject_env query — the API route defaults executor=local +
+      // inject_env=false, which is what we want. Forcing inject_env=true here
+      // triggered the legacy deployment.inject_vars_to_image side-effect, which
+      // spawned a redundant `docker compose up` plugin container ("t-app-1")
+      // alongside the executor's own container — duplicating message delivery.
+      const res = await fetch('/api/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
