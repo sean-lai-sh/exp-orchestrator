@@ -313,10 +313,22 @@ async def get_deployment_credentials(
     provisioning = dep.get("provisioning", {})
     corelink_block = None
     if provisioning:
+        # Different connections to corelink-server must use different users — the
+        # server suppresses stream-update notifications between same-user
+        # connections ("skipping stream from same user"). The plugin container
+        # uses provisioning.username (Testuser); sender/receiver get distinct
+        # seeded users so all three nodes route correctly.
+        # NOTE: demo-only — relies on corelink-server's seeded test users
+        # (Testuser1/Testuser2 with the shared Testpassword). Production would
+        # provision per-deployment users.
+        role_user = {
+            "sender": "Testuser1",
+            "receiver": "Testuser2",
+        }.get(role, provisioning["username"])
         corelink_block = {
             "host": provisioning["host"],
             "port": provisioning["port"],
-            "username": provisioning["username"],
+            "username": role_user,
             "password": provisioning["password"],
         }
     return {

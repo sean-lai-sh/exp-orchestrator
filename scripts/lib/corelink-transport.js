@@ -6,6 +6,10 @@
  * and the lib/vendor/ directory) is the rip-out path.
  */
 
+// corelink-server uses a self-signed TLS cert in dev. Mirrors the Python
+// corelink_admin client, which uses verify=False on httpx.
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+
 const corelink = require('./vendor/corelink.lib.js')
 
 async function connect({ host, deployId, role, credentials, corelinkBlock }) {
@@ -50,9 +54,12 @@ async function subscribe(handle, onMessage) {
   corelink.on('data', (streamID, data) => {
     onMessage(data.toString('utf-8'))
   })
+  // streamIDs MUST be empty here — they're filter hints by NUMERIC server-assigned
+  // ID, not by the orchestrator's logical stream_id string. The on('receiver')
+  // handler above subscribes to whichever sender shows up via the alert flow.
   await corelink.createReceiver({
     workspace: handle.cred.workspace,
-    streamIDs: handle.cred.stream_id ? [handle.cred.stream_id] : [],
+    streamIDs: [],
     type: handle.cred.data_type,
     protocol: 'ws',
     alert: true,

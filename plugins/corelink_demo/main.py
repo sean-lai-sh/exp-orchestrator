@@ -73,12 +73,14 @@ async def _corelink_loop() -> None:
 
     in_streams = _parse_stream_env("IN_")
     for stream_type, cfg in in_streams.items():
-        stream_ids = [cfg["stream_id"]] if cfg["stream_id"] else []
+        # stream_ids MUST be empty — they filter by NUMERIC server-assigned IDs,
+        # not the orchestrator's logical stream_id string. The alert=True flag
+        # delivers receiver-callbacks for matching senders.
         await corelink.create_receiver(
             workspace=cfg["workspace"],
             protocol="ws",
             data_type=stream_type.lower(),
-            stream_ids=stream_ids,
+            stream_ids=[],
             alert=True,
         )
         print(f"[demo-plugin] Receiver ready: {stream_type} @ {cfg['workspace']}")

@@ -63,12 +63,19 @@ def test_deploy_v2_provisions_workspace_and_returns_corelink_block(client):
     deploy_id = body["deploy_id"]
     assert body["plan"]["workspace"] == f"workflow_{deploy_id}"
 
-    # Sender credentials response includes the new corelink block
+    # Sender credentials response includes the new corelink block. The
+    # username is role-mapped (Testuser1 for sender, Testuser2 for receiver,
+    # provisioning default for plugin) so each connection to corelink-server
+    # uses a different identity — same-user connections suppress the alert
+    # routing the demo depends on.
     cred = client.get(f"/deployments/{deploy_id}/credentials", params={"role": "sender"}).json()
     assert cred["corelink"]["host"] == "1.2.3.4"
     assert cred["corelink"]["port"] == 20012
-    assert cred["corelink"]["username"] == "Testuser"
+    assert cred["corelink"]["username"] == "Testuser1"
     assert cred["credentials"]["json"]["workspace"] == f"workflow_{deploy_id}"
+
+    rcv_cred = client.get(f"/deployments/{deploy_id}/credentials", params={"role": "receiver"}).json()
+    assert rcv_cred["corelink"]["username"] == "Testuser2"
 
 
 def test_deploy_v2_returns_503_when_provision_fails(client, monkeypatch):
