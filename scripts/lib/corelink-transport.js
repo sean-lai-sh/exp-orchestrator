@@ -47,23 +47,30 @@ async function send(handle, message) {
 
 async function subscribe(handle, onMessage) {
   if (handle.role !== 'receiver') throw new Error('subscribe() called on non-receiver handle')
+  // on('receiver') fires for senders that arrive AFTER our createReceiver call.
   corelink.on('receiver', async (data) => {
-    const streamIDs = [data.streamID]
-    await corelink.subscribe({ streamIDs })
+    await corelink.subscribe({ streamIDs: [data.streamID] })
   })
   corelink.on('data', (streamID, data) => {
     onMessage(data.toString('utf-8'))
   })
-  // streamIDs MUST be empty here — they're filter hints by NUMERIC server-assigned
-  // ID, not by the orchestrator's logical stream_id string. The on('receiver')
-  // handler above subscribes to whichever sender shows up via the alert flow.
-  await corelink.createReceiver({
+  // streamIDs filter is by NUMERIC server-assigned ID, not the orchestrator's
+  // logical stream_id string — pass [] and rely on workspace+type filtering.
+  // createReceiver resolves with an array of pre-existing matching streams
+  // (each {streamID, ...}); we subscribe to those explicitly so plugins or
+  // other senders that started before the receiver still get delivered.
+  const streamList = await corelink.createReceiver({
     workspace: handle.cred.workspace,
     streamIDs: [],
     type: handle.cred.data_type,
     protocol: 'ws',
     alert: true,
   })
+  for (const item of streamList || []) {
+    if (item && item.streamID != null) {
+      await corelink.subscribe({ streamIDs: [item.streamID] })
+    }
+  }
   return async () => { await corelink.exit() }
 }
 
