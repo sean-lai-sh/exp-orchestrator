@@ -1,16 +1,19 @@
 import BaseNode, { BaseNodeProps } from './BaseNode';
 import { Handle, Position } from '@xyflow/react';
 import { ChangeEvent } from 'react';
-import { Puzzle } from 'lucide-react';
 import { getSourceColor } from '../../lib/sourceColors';
+
+const HANDLE_COLOR = 'var(--t-transform)';
 
 const PluginNode = (props: BaseNodeProps) => {
   const { id, data, setNodes, isConnectable } = props;
-  const sources = data.sources || [];
+  const sources: string[] = data.sources || [];
   const canReceive = data.access_types?.canReceive !== false;
   const canSend = data.access_types?.canSend !== false;
 
-  const handleInputChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleInputChange = (
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
     const { name, value } = event.target;
     setNodes((nds: any) =>
       nds.map((node: any) => {
@@ -23,99 +26,149 @@ const PluginNode = (props: BaseNodeProps) => {
   };
 
   return (
-    <BaseNode {...props} color="bg-purple-100" shapeClass="rounded-lg border-purple-400 border-2">
-      <div className="flex items-center gap-2 mb-2">
-        <Puzzle className="text-purple-600 h-4 w-4" />
-        <span className="font-semibold text-purple-700">Plugin</span>
-      </div>
-      
+    <BaseNode {...props} kind="transform" typeLabel="transform">
       <input
         type="text"
         name="name"
-        value={data.name}
+        value={data.name || ''}
         onChange={handleInputChange}
-        className="p-1 border border-gray-300 rounded-md text-sm w-full mb-1"
-        placeholder="Enter name"
+        placeholder="name…"
+        style={{
+          marginTop: 2,
+          fontSize: 15,
+          fontWeight: 500,
+          letterSpacing: '-0.01em',
+          width: '100%',
+          border: 'none',
+          outline: 'none',
+          background: 'transparent',
+          color: 'var(--ink)',
+          padding: 0,
+        }}
       />
-      
-      <div className="text-xs text-purple-800 mb-1">
-        Outputs: {sources.length > 0 ? `${sources.length} available` : 'Basic processing'}
-      </div>
-      
-      <ul className="text-xs text-purple-900 max-h-12 overflow-y-auto mb-2">
-        {sources.length === 0 ? (
-          <li className="italic text-purple-400">Standard output</li>
-        ) : (
-          sources.map((src: string, i: number) => (
-            <li key={i} className="truncate">• {src.replace(/_/g, ' ')}</li>
-          ))
-        )}
-      </ul>
-      
       <textarea
         name="description"
         value={data.description || ''}
         onChange={handleInputChange}
-        className="p-1 border border-gray-300 rounded-md text-sm w-full h-8 resize-none text-xs"
-        placeholder="Description..."
+        placeholder="description…"
+        rows={2}
+        style={{
+          fontSize: 12,
+          color: 'var(--ink-3)',
+          width: '100%',
+          border: 'none',
+          outline: 'none',
+          background: 'transparent',
+          resize: 'none',
+          padding: 0,
+          marginTop: 1,
+          fontFamily: 'inherit',
+        }}
       />
-      
-      {/* Input handle - show if can receive */}
+
+      {sources.length > 0 ? (
+        <div
+          style={{
+            marginTop: 10,
+            paddingTop: 10,
+            borderTop: '1px dashed var(--line)',
+          }}
+        >
+          {sources.map((src, i) => (
+            <div
+              key={src + i}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: 12,
+                color: 'var(--ink-2)',
+                padding: '2px 0',
+              }}
+            >
+              <span style={{ fontFamily: 'var(--font-mono-orch)' }}>
+                {src.replace(/_/g, ' ')}
+              </span>
+              <span
+                style={{
+                  fontFamily: 'var(--font-mono-orch)',
+                  color: 'var(--ink-4)',
+                  fontSize: 11,
+                }}
+              >
+                out
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 11,
+            color: 'var(--ink-4)',
+            fontFamily: 'var(--font-mono-orch)',
+          }}
+        >
+          standard output
+        </div>
+      )}
+
       {canReceive && (
-        <Handle 
-          type="target" 
-          position={Position.Left} 
+        <Handle
+          type="target"
+          position={Position.Left}
           isConnectable={isConnectable}
-          style={{ 
-            background: '#8b5cf6',
-            border: '2px solid #7c3aed',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-            left: '-8px',
-            top: '50%',
-            transform: 'translateY(-50%)'
+          style={{
+            background: 'var(--paper)',
+            border: `2px solid ${HANDLE_COLOR}`,
+            width: 10,
+            height: 10,
+            left: -5,
+            top: 30,
+            boxShadow: '0 0 0 3px var(--paper)',
           }}
         />
       )}
-      
-      {/* Output handles - create multiple based on sources */}
-      {canSend && (
-        sources.length > 0 ? (
-          sources.map((source: string, index: number) => (
+
+      {canSend &&
+        (sources.length > 0 ? (
+          sources.map((source, index) => (
             <Handle
               key={`source-${index}`}
               type="source"
               position={Position.Right}
               id={source}
               isConnectable={isConnectable}
-              style={{ 
+              style={{
                 background: getSourceColor(index),
-                border: `2px solid ${getSourceColor(index)}`,
-                filter: 'brightness(1.1)',
-                boxShadow: `0 2px 6px ${getSourceColor(index)}40`,
-                right: '-8px',
-                top: `${25 + (index * 12)}%`,
-                transform: 'translateY(-50%)'
+                border: '2px solid var(--paper)',
+                width: 10,
+                height: 10,
+                right: -5,
+                top: `${30 + index * 18}px`,
+                boxShadow: '0 0 0 3px var(--paper)',
               }}
             />
           ))
         ) : (
-          <Handle 
-            type="source" 
-            position={Position.Right} 
+          <Handle
+            type="source"
+            position={Position.Right}
             isConnectable={isConnectable}
-            style={{ 
-              background: '#8b5cf6',
-              border: '2px solid #7c3aed',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              right: '-8px',
-              top: '50%',
-              transform: 'translateY(-50%)'
+            style={{
+              background: HANDLE_COLOR,
+              border: '2px solid var(--paper)',
+              width: 10,
+              height: 10,
+              right: -5,
+              top: 30,
+              boxShadow: '0 0 0 3px var(--paper)',
             }}
           />
-        )
-      )}
+        ))}
     </BaseNode>
   );
 };
 
-export default PluginNode; 
+export default PluginNode;

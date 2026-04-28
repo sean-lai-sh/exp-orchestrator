@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { BaseEdge, getSmoothStepPath, type EdgeProps } from '@xyflow/react';
 
 export function AnimatedSVGEdge({
@@ -10,46 +11,43 @@ export function AnimatedSVGEdge({
   targetY,
   sourcePosition,
   targetPosition,
+  style,
   data,
 }: EdgeProps) {
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
+  const [edgePath] = getSmoothStepPath({
     sourceX,
     sourceY,
     sourcePosition,
     targetX,
     targetY,
     targetPosition,
+    borderRadius: 12,
   });
 
-  const streamLabel = typeof data?.streamType === 'string'
-    ? data.streamType
-    : typeof data?.label === 'string'
-      ? data.label
-      : 'json';
-  const isInvalid = Boolean(data?.invalid);
-  const strokeColor = isInvalid
-    ? '#dc2626'
-    : typeof data?.color === 'string'
-      ? data.color
-      : '#2563eb';
-  const markerId = `arrowhead-${id}`;
+  // Edge color: prefer custom data.color (set by onConnect), then style.stroke,
+  // otherwise fall back to the editorial transform tint.
+  const dataColor = (data as { color?: string } | undefined)?.color;
+  const styleStroke = (style as { stroke?: string } | undefined)?.stroke;
+  const color = dataColor ?? styleStroke ?? 'var(--t-transform)';
+
+  const arrowId = `arrow-${id}`;
 
   return (
     <>
       <defs>
         <marker
-          id={markerId}
-          markerWidth="12"
-          markerHeight="12"
-          viewBox="-10 -10 20 20"
+          id={arrowId}
+          markerWidth="10"
+          markerHeight="10"
+          viewBox="-6 -6 12 12"
           orient="auto-start-reverse"
           refX="0"
           refY="0"
         >
           <polyline
-            points="-5,-4 0,0 -5,4"
-            stroke={strokeColor}
-            strokeWidth="2"
+            points="-3,-3 0,0 -3,3"
+            stroke={color}
+            strokeWidth="1.5"
             fill="none"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -57,40 +55,36 @@ export function AnimatedSVGEdge({
         </marker>
       </defs>
 
+      {/* Soft underlay so the edge reads against the warm paper grid */}
       <BaseEdge
-        id={id}
+        id={`${id}-glow`}
         path={edgePath}
-        markerEnd={`url(#${markerId})`}
         style={{
-          stroke: strokeColor,
-          strokeWidth: isInvalid ? 2.5 : 2,
-          strokeDasharray: isInvalid ? '8 6' : undefined,
+          stroke: color,
+          strokeWidth: 5,
+          opacity: 0.08,
+          fill: 'none',
         }}
       />
 
-      <circle r="3" fill={strokeColor}>
-        <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} />
-      </circle>
+      {/* Living dashed edge */}
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        markerEnd={`url(#${arrowId})`}
+        style={{
+          stroke: color,
+          strokeWidth: 1.5,
+          strokeDasharray: '6 6',
+          fill: 'none',
+          animation: 'flow-dash 1.6s linear infinite',
+        }}
+      />
 
-      <foreignObject
-        width="120"
-        height="28"
-        x={labelX - 60}
-        y={labelY - 14}
-        requiredExtensions="http://www.w3.org/1999/xhtml"
-      >
-        <div className="flex h-7 items-center justify-center">
-          <span
-            className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide shadow-sm ${
-              isInvalid
-                ? 'border-red-200 bg-red-50 text-red-700'
-                : 'border-slate-200 bg-white text-slate-600'
-            }`}
-          >
-            {streamLabel}
-          </span>
-        </div>
-      </foreignObject>
+      {/* Traveling packet */}
+      <circle r="2.5" fill={color} opacity="0.9">
+        <animateMotion dur="2.4s" repeatCount="indefinite" path={edgePath} />
+      </circle>
     </>
   );
 }

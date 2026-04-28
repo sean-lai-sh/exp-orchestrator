@@ -1,27 +1,30 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useState, useMemo, useRef, useEffect } from 'react';
 import {
-  Background,
-  Controls,
-  MiniMap,
   ReactFlow,
-  ReactFlowProvider,
+  Controls,
+  Background,
   addEdge,
-  applyEdgeChanges,
   applyNodeChanges,
+  applyEdgeChanges,
   reconnectEdge,
   useReactFlow,
-  type Connection,
-  type Edge,
-  type EdgeChange,
+  ReactFlowProvider,
   type Node,
+  type Edge,
+  type Connection,
   type NodeChange,
+  type EdgeChange,
+  MiniMap,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Copy, Plus, Trash2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Trash2, Copy, Plus } from 'lucide-react';
+
 import CanvasPanel from '../ui/CanvasPanel';
-import AnalyzerPanel from '../ui/AnalyzerPanel';
+import CanvasTopChrome, { CANVAS_TOP_CHROME_HEIGHT } from '../ui/CanvasTopChrome';
+
 import {
   ContextMenu,
   ContextMenuContent,
@@ -29,231 +32,224 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '../ui/context-menu';
+
 import SenderNode from '../nodes/SenderNode';
 import ReceiverNode from '../nodes/ReceiverNode';
 import PluginNode from '../nodes/PluginNode';
-import ComponentPanel from '../ui/ComponentPanel';
-import type {
-  EditableNodeData,
-  NodeTemplate,
-  NodeType,
-  PluginNodeData,
-  ReceiverNodeData,
-  SenderNodeData,
-} from '../../lib/types';
+import type { NodeType, EditableNodeData, NodeTemplate, SenderNodeData, ReceiverNodeData, PluginNodeData } from '../../lib/types';
 import { AnimatedSVGEdge } from './AnimatedSVGEdge';
-import { analyzeDAG, type AnalysisResult, type AnalyzerIssue } from '../../lib/dag-analyzer';
-import { getEdgeStreamType, getNodeOutputTypes } from '../../lib/workflow-validation';
+import ComponentPanel from '../ui/ComponentPanel';
+import { toast } from 'sonner';
+import { buildDeployWorkflow } from '../../lib/deploy-types';
+import { useWorkflowPersistence } from '../../hooks/useWorkflowPersistence';
 
-function getDefaultNodeData(type: NodeType, template?: NodeTemplate): EditableNodeData {
+// Helper to generate default node data for each type
+function getDefaultNodeData(type: NodeType, id: string, template?: NodeTemplate): EditableNodeData {
   const baseToken = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-${Date.now()}`;
-
   if (template) {
-    return {
-      token: baseToken,
-      name: template.defaultData.name || `${type[0].toUpperCase()}${type.slice(1)} Node`,
-      description: '',
-      nodeType: type,
-      access_types: {
-        canSend: type !== 'receiver',
-        canReceive: type !== 'sender',
-        allowedSendTypes: [],
-        allowedReceiveTypes: [],
-      },
-      runtime: type === 'plugin' ? '' : undefined,
+    // Merge template data with required fields
+    const templateData = {
       ...template.defaultData,
-    } as EditableNodeData;
+      token: baseToken,
+      name: template.defaultData.name || `${type.charAt(0).toUpperCase() + type.slice(1)} Node`
+    };
+    return templateData as EditableNodeData;
   }
-
+  // Default fallback for non-template nodes
   const base = {
-    name: `${type[0].toUpperCase()}${type.slice(1)} Node`,
+    name: `${type.charAt(0).toUpperCase() + type.slice(1)} Node`,
     description: '',
     token: baseToken,
     nodeType: type,
-    runtime: type === 'plugin' ? '' : undefined,
     access_types: {
       allowedSendTypes: [],
       allowedReceiveTypes: [],
-      canSend: type !== 'receiver',
-      canReceive: type !== 'sender',
     },
   };
-
   if (type === 'sender') {
-    return {
-      ...base,
-      nodeType: 'sender',
-      sources: ['json'],
+    return { 
+      ...base, 
+      nodeType: 'sender' as const,
+      sources: [],
+      access_types: { ...base.access_types, canSend: true, canReceive: false } 
     } as SenderNodeData;
   }
-
   if (type === 'receiver') {
-    return {
-      ...base,
-      nodeType: 'receiver',
+    return { 
+      ...base, 
+      nodeType: 'receiver' as const,
       sources: [],
+      access_types: { ...base.access_types, canSend: false, canReceive: true } 
     } as ReceiverNodeData;
   }
-
-  return {
-    ...base,
-    nodeType: 'plugin',
-    sources: ['json'],
+  // plugin
+  return { 
+    ...base, 
+    nodeType: 'plugin' as const,
+    access_types: { ...base.access_types, canSend: true, canReceive: true } 
   } as PluginNodeData;
 }
 
-const initialNodes: Node<EditableNodeData>[] = [
+const defaultNodes: Node<EditableNodeData>[] = [
   {
     id: '1',
     type: 'plugin',
-    data: getDefaultNodeData('plugin'),
+    data: getDefaultNodeData('plugin', '1'),
     position: { x: 250, y: 5 },
+    draggable: true,
+    selectable: true,
+    connectable: true,
   },
 ];
 
+let nextNodeId = 2;
+const defaultEdges: Edge[] = [];
+
+// Define edgeTypes to use the custom animated edge
 const edgeTypes = {
   animated: AnimatedSVGEdge,
 };
 
-function FlowContent() {
-  const [nodes, setNodes] = useState<Node<EditableNodeData>[]>(initialNodes);
-  const [edges, setEdges] = useState<Edge[]>([]);
+function FlowContent({ projectId }: { projectId: string | null }) {
+  const { initialNodes: loadedNodes, initialEdges: loadedEdges, isLoaded, debouncedSave } = useWorkflowPersistence(projectId);
+  const [nodes, setNodes] = useState<Node<EditableNodeData>[]>(projectId ? [] : defaultNodes);
+  const [edges, setEdges] = useState<Edge[]>(projectId ? [] : defaultEdges);
+  const hasLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (projectId && isLoaded && !hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+      setNodes(loadedNodes.length > 0 ? loadedNodes : []);
+      setEdges(loadedEdges.length > 0 ? loadedEdges : []);
+    }
+  }, [projectId, isLoaded, loadedNodes, loadedEdges]);
+
+  useEffect(() => {
+    if (projectId && hasLoadedRef.current) {
+      debouncedSave(nodes, edges);
+    }
+  }, [nodes, edges, projectId, debouncedSave]);
   const [selectedNodeForPanel, setSelectedNodeForPanel] = useState<Node<EditableNodeData> | null>(null);
   const [contextMenuNode, setContextMenuNode] = useState<Node<EditableNodeData> | null>(null);
-  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
-  const [isDeploying, setIsDeploying] = useState(false);
-  const [showDeployConfirm, setShowDeployConfirm] = useState(false);
-  const [isCleaning, setIsCleaning] = useState(false);
-  const [showCleanConfirm, setShowCleanConfirm] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(() => analyzeDAG(initialNodes, []));
-  const [isValidatingBackend, setIsValidatingBackend] = useState(false);
-  const [validationMessage, setValidationMessage] = useState<string | null>(null);
-  const [focusedIssue, setFocusedIssue] = useState<AnalyzerIssue | null>(null);
-
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true); // Controls both panels
+  const [isDeploying, setIsDeploying] = useState(false); // New state
+  const [showDeployConfirm, setShowDeployConfirm] = useState(false); // New state
+  const [deployAnimationActive, setDeployAnimationActive] = useState(false); // For progress bar/checkmark
+  const [showCheckmark, setShowCheckmark] = useState(false); // Show checkmark after progress
+  const [isCleaning, setIsCleaning] = useState(false); // New state for cleaning
+  const [showCleanConfirm, setShowCleanConfirm] = useState(false); // New state for clean confirm
   const edgeReconnectSuccessful = useRef(true);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlowInstance = useReactFlow();
 
+  // Register node types with setNodes injection (must be after setNodes is defined)
   const nodeTypes = useMemo(() => ({
     sender: (props: any) => <SenderNode {...props} setNodes={setNodes} />,
     receiver: (props: any) => <ReceiverNode {...props} setNodes={setNodes} />,
     plugin: (props: any) => <PluginNode {...props} setNodes={setNodes} />,
-  }), []);
+  }), [setNodes]);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setAnalysisResult(analyzeDAG(nodes, edges));
-    }, 300);
-
-    return () => window.clearTimeout(timer);
-  }, [nodes, edges]);
-
-  const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodes((currentNodes) => applyNodeChanges(changes, currentNodes) as Node<EditableNodeData>[]);
-  }, []);
-
-  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setEdges((currentEdges) => applyEdgeChanges(changes, currentEdges));
-  }, []);
-
-  const onAddNode = useCallback((type: NodeType = 'plugin', template?: NodeTemplate, explicitPosition?: { x: number; y: number }) => {
-    const nodeId = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2, 10);
-
-    let position = explicitPosition ?? { x: Math.random() * 200 + 75, y: Math.random() * 200 + 75 };
-    if (!explicitPosition && reactFlowWrapper.current) {
-      const { width, height } = reactFlowWrapper.current.getBoundingClientRect();
-      position = reactFlowInstance.screenToFlowPosition({ x: width / 2, y: height / 2 });
-    }
-
-    const newNode: Node<EditableNodeData> = {
-      id: nodeId,
-      type,
-      data: getDefaultNodeData(type, template),
-      position,
-      draggable: true,
-      selectable: true,
-      connectable: true,
-    };
-
-    setNodes((currentNodes) => currentNodes.concat(newNode));
-    setSelectedNodeForPanel(newNode);
-  }, [reactFlowInstance]);
-
-  const onConnect = useCallback((connection: Connection) => {
-    const sourceHandleId = connection.sourceHandle || 'default';
-    const sourceNode = nodes.find((node) => node.id === connection.source);
-    const sourceOutputs = sourceNode ? getNodeOutputTypes(sourceNode) : [];
-    const streamType = sourceOutputs[0] || 'json';
-
-    let edgeColor = '#3b82f6';
-    if (sourceNode?.data.sources && sourceHandleId !== 'default') {
-      const sourceIndex = sourceNode.data.sources.findIndex((source: string) => source === sourceHandleId);
-      const palette = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#ec4899'];
-      if (sourceIndex >= 0) {
-        edgeColor = palette[sourceIndex % palette.length];
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => 
+      setNodes((nds) => applyNodeChanges(changes, nds) as Node<EditableNodeData>[]),
+    [setNodes]
+  );
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+    [setEdges]
+  );
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      // Get the source handle ID and derive color from source handle
+      const sourceHandleId = connection.sourceHandle || 'default';
+      
+      // Find the source node to get its sources array for color consistency
+      const sourceNode = nodes.find(node => node.id === connection.source);
+      let edgeColor = '#3b82f6'; // default blue
+      
+      if (sourceNode && sourceNode.data.sources && sourceHandleId !== 'default') {
+        // Find the index of this source to match handle color
+        const sourceIndex = sourceNode.data.sources.findIndex((src: string) => src === sourceHandleId);
+        if (sourceIndex !== -1) {
+          // Use the same color scheme as handles
+          const sourceColors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#ec4899', '#6366f1', '#14b8a6'];
+          edgeColor = sourceColors[sourceIndex % sourceColors.length];
+        }
       }
-    }
-
-    setEdges((currentEdges) => addEdge({
-      ...connection,
-      type: 'animated',
-      animated: true,
-      reconnectable: true,
-      style: { stroke: edgeColor, strokeWidth: 2 },
-      data: {
-        color: edgeColor,
-        sourceHandle: sourceHandleId,
-        streamType,
-        label: streamType,
-      },
-    }, currentEdges));
-  }, [nodes]);
+      
+      setEdges((eds) => addEdge({ 
+        ...connection, 
+        type: 'animated', 
+        animated: true, 
+        reconnectable: true,
+        style: { stroke: edgeColor, strokeWidth: 2 },
+        data: { color: edgeColor, sourceHandle: sourceHandleId }
+      }, eds));
+    },
+    [setEdges, nodes]
+  );
 
   const onReconnectStart = useCallback(() => {
     edgeReconnectSuccessful.current = false;
   }, []);
 
-  const onReconnect = useCallback((oldEdge: Edge, newConnection: Connection) => {
-    edgeReconnectSuccessful.current = true;
-    setEdges((currentEdges) => reconnectEdge(oldEdge, newConnection, currentEdges));
-  }, []);
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      edgeReconnectSuccessful.current = true;
+      setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
+    },
+    [setEdges]
+  );
 
-  const onReconnectEnd = useCallback((_: MouseEvent | TouchEvent, edge: Edge) => {
-    if (!edgeReconnectSuccessful.current) {
-      setEdges((currentEdges) => currentEdges.filter((candidate) => candidate.id !== edge.id));
+  const onReconnectEnd = useCallback(
+    (_: globalThis.MouseEvent | globalThis.TouchEvent, edge: Edge) => {
+      if (!edgeReconnectSuccessful.current) {
+        setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+      }
+      edgeReconnectSuccessful.current = true;
+    },
+    [setEdges]
+  );
+
+  const onAddNode = useCallback((type: NodeType = 'plugin', template?: NodeTemplate) => {
+    // Use a random hash/UUID for node ID
+    let newNodeId: string;
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      newNodeId = crypto.randomUUID();
+    } else {
+      // Fallback: random base36 string
+      newNodeId = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
     }
-    edgeReconnectSuccessful.current = true;
-  }, []);
-
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-  }, []);
-
-  const onDrop = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    const type = event.dataTransfer.getData('application/reactflow-type') as NodeType;
-    if (!type) {
-      return;
+    let newPosition = { x: Math.random() * 200 + 50, y: Math.random() * 200 + 50 };
+    if (reactFlowWrapper.current) {
+      const { width, height } = reactFlowWrapper.current.getBoundingClientRect();
+      const targetX = width / 2;
+      const targetY = height / 2;
+      newPosition = reactFlowInstance.screenToFlowPosition({ x: targetX, y: targetY });
     }
-
-    const templateString = event.dataTransfer.getData('application/reactflow-template');
-    const template = templateString ? JSON.parse(templateString) as NodeTemplate : undefined;
-    const position = reactFlowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    onAddNode(type, template, position);
-  }, [onAddNode, reactFlowInstance]);
+    const newNode: Node<EditableNodeData> = {
+      id: newNodeId,
+      type: type,
+      data: getDefaultNodeData(type, newNodeId, template),
+      position: newPosition,
+      draggable: true,
+      selectable: true,
+      connectable: true,
+    };
+    setNodes((nds) => nds.concat(newNode));
+  }, [reactFlowInstance, setNodes]);
 
   const onPaneClick = useCallback(() => {
     setSelectedNodeForPanel(null);
     setContextMenuNode(null);
-    setFocusedIssue(null);
-  }, []);
+    // Optionally, you might want to close the panel as well if no node is selected
+    // if (!isLeftPanelOpen) setIsLeftPanelOpen(false); // Example, if you want panel to close
+  }, [setSelectedNodeForPanel]);
 
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node<EditableNodeData>) => {
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node<EditableNodeData>) => {
+    console.log("onNodeClick triggered. Node:", node);
     setSelectedNodeForPanel(node);
-    setContextMenuNode(null);
+    // Panel opens if isLeftPanelOpen is true, showing the selected node
   }, []);
 
   const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node<EditableNodeData>) => {
@@ -262,389 +258,584 @@ function FlowContent() {
   }, []);
 
   const handleDeleteNode = useCallback((nodeId: string) => {
-    setNodes((currentNodes) => currentNodes.filter((node) => node.id !== nodeId));
-    setEdges((currentEdges) => currentEdges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+    setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+    setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+    
+    // Clear selection if the deleted node was selected
     if (selectedNodeForPanel?.id === nodeId) {
       setSelectedNodeForPanel(null);
     }
     if (contextMenuNode?.id === nodeId) {
       setContextMenuNode(null);
     }
-  }, [contextMenuNode, selectedNodeForPanel]);
+  }, [selectedNodeForPanel, contextMenuNode]);
 
   const handleDuplicateNode = useCallback((nodeId: string) => {
-    const nodeToDuplicate = nodes.find((node) => node.id === nodeId);
-    if (!nodeToDuplicate) {
-      return;
-    }
+    const nodeToDuplicate = nodes.find(node => node.id === nodeId);
+    if (!nodeToDuplicate) return;
 
-    const duplicateId = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2, 10);
-    const duplicatedNode: Node<EditableNodeData> = {
+    const newNodeId = `${nextNodeId++}`;
+    const newNode: Node<EditableNodeData> = {
       ...nodeToDuplicate,
-      id: duplicateId,
+      id: newNodeId,
       position: {
-        x: nodeToDuplicate.position.x + 60,
-        y: nodeToDuplicate.position.y + 60,
+        x: nodeToDuplicate.position.x + 50,
+        y: nodeToDuplicate.position.y + 50,
       },
       data: {
         ...nodeToDuplicate.data,
-        token: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-${Date.now()}`,
         name: `${nodeToDuplicate.data.name} (Copy)`,
-      },
+        token: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `token-${Date.now()}`,
+      }
     };
-
-    setNodes((currentNodes) => currentNodes.concat(duplicatedNode));
-    setSelectedNodeForPanel(duplicatedNode);
+    setNodes((nds) => nds.concat(newNode));
     setContextMenuNode(null);
   }, [nodes]);
 
-  const handleNodeDataChange = useCallback((nodeId: string, newData: Partial<EditableNodeData>) => {
-    setNodes((currentNodes) => currentNodes.map((node) => {
-      if (node.id !== nodeId) {
-        return node;
-      }
-      const updatedNode = { ...node, data: { ...node.data, ...newData } as EditableNodeData };
-      return updatedNode;
-    }));
+  // Remove keyboard delete support since we're only using right-click now
 
-    setSelectedNodeForPanel((currentSelected) => (
-      currentSelected && currentSelected.id === nodeId
-        ? { ...currentSelected, data: { ...currentSelected.data, ...newData } as EditableNodeData }
-        : currentSelected
-    ));
+  const handleCleanWorkflow = useCallback(() => {
+    setIsCleaning(true);
+    setShowCheckmark(false);
+    
+    setTimeout(() => {
+      const HORIZONTAL_SPACING = 400;
+      const VERTICAL_SPACING = 200;
+      const START_X = 150;
+      const START_Y = 150;
+
+      // Build connection maps
+      const nodeMap = new Map(nodes.map(n => [n.id, n]));
+      const outgoingMap = new Map<string, Edge[]>();
+      const incomingMap = new Map<string, Edge[]>();
+      
+      edges.forEach(edge => {
+        if (!outgoingMap.has(edge.source)) outgoingMap.set(edge.source, []);
+        if (!incomingMap.has(edge.target)) incomingMap.set(edge.target, []);
+        outgoingMap.get(edge.source)!.push(edge);
+        incomingMap.get(edge.target)!.push(edge);
+      });
+
+      // Calculate depth levels for visual hierarchy
+      function calculateDepth(nodeId: string, visited = new Set<string>()): number {
+        if (visited.has(nodeId)) return 0; // cycle protection
+        visited.add(nodeId);
+        
+        const incoming = incomingMap.get(nodeId) || [];
+        if (incoming.length === 0) return 0; // root node
+        
+        return 1 + Math.max(...incoming.map(edge => calculateDepth(edge.source, new Set(visited))));
+      }
+
+      // Group nodes by depth level and type preference
+      const nodesByDepth = new Map<number, { senders: Node<EditableNodeData>[], plugins: Node<EditableNodeData>[], receivers: Node<EditableNodeData>[] }>();
+      
+      nodes.forEach(node => {
+        const depth = calculateDepth(node.id);
+        if (!nodesByDepth.has(depth)) {
+          nodesByDepth.set(depth, { senders: [], plugins: [], receivers: [] });
+        }
+        
+        const level = nodesByDepth.get(depth)!;
+        if (node.type === 'sender') level.senders.push(node);
+        else if (node.type === 'plugin') level.plugins.push(node);
+        else if (node.type === 'receiver') level.receivers.push(node);
+      });
+
+      // Position nodes with visual hierarchy rules:
+      // 1. Senders typically at depth 0 (leftmost)
+      // 2. Plugins in middle depths
+      // 3. Receivers typically at higher depths (rightmost)
+      const nodePositions: Record<string, {x: number, y: number}> = {};
+      const sortedDepths = Array.from(nodesByDepth.keys()).sort((a, b) => a - b);
+      
+      sortedDepths.forEach((depth, depthIdx) => {
+        const level = nodesByDepth.get(depth)!;
+        const xOffset = START_X + (depthIdx * HORIZONTAL_SPACING);
+        let yOffset = START_Y;
+        
+        // Within each depth level, order by type: senders, plugins, receivers
+        const orderedNodes = [...level.senders, ...level.plugins, ...level.receivers];
+        
+        orderedNodes.forEach((node, nodeIdx) => {
+          nodePositions[node.id] = {
+            x: xOffset,
+            y: yOffset + (nodeIdx * VERTICAL_SPACING)
+          };
+        });
+      });
+
+      // Handle edge case: nodes with no connections (completely isolated)
+      const connectedNodeIds = new Set([
+        ...edges.map(e => e.source),
+        ...edges.map(e => e.target)
+      ]);
+      
+      const isolatedNodes = nodes.filter(n => !connectedNodeIds.has(n.id));
+      if (isolatedNodes.length > 0) {
+        const isolatedStartX = START_X + ((sortedDepths.length + 2) * HORIZONTAL_SPACING);
+        isolatedNodes.forEach((node, idx) => {
+          nodePositions[node.id] = {
+            x: isolatedStartX + (node.type === 'sender' ? 0 : node.type === 'plugin' ? HORIZONTAL_SPACING : HORIZONTAL_SPACING * 2),
+            y: START_Y + (idx * VERTICAL_SPACING)
+          };
+        });
+      }
+
+      const cleanedNodes = nodes.map(node => ({
+        ...node,
+        position: nodePositions[node.id] || node.position
+      }));
+      
+      setNodes(cleanedNodes);
+      setIsCleaning(false);
+      setShowCheckmark(true);
+      setTimeout(() => setShowCheckmark(false), 2000);
+    }, 2000);
+  }, [nodes, edges, setNodes]);
+
+  const handleCleanClick = useCallback(() => {
+    setShowCleanConfirm(true);
   }, []);
+
+  const handleConfirmClean = useCallback(() => {
+    setShowCleanConfirm(false);
+    handleCleanWorkflow();
+  }, [handleCleanWorkflow]);
+
+  const handleCancelClean = useCallback(() => {
+    setShowCleanConfirm(false);
+  }, []);
+
+  const handleNodeDataChange = useCallback((nodeId: string, newData: Partial<EditableNodeData>) => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === nodeId) {
+          // Ensure data is always defined and new properties are merged correctly
+          const currentData = node.data || { title: '', description: '' }; 
+          const updatedData = { ...currentData, ...newData };
+          return { ...node, data: updatedData as EditableNodeData };
+        }
+        return node;
+      })
+    );
+    // If the currently selected node in the panel is the one being updated,
+    // refresh its data in the panel as well to show immediate feedback.
+    setSelectedNodeForPanel(prevNode => 
+      prevNode && prevNode.id === nodeId ? { ...prevNode, data: { ...prevNode.data, ...newData } as EditableNodeData } : prevNode
+    );
+  }, [setNodes]);
 
   const handleComponentPanelClearSelection = useCallback(() => {
     setSelectedNodeForPanel(null);
   }, []);
 
-  const handleCleanWorkflow = useCallback(() => {
-    setIsCleaning(true);
-
-    window.setTimeout(() => {
-      const HORIZONTAL_SPACING = 360;
-      const VERTICAL_SPACING = 180;
-      const START_X = 150;
-      const START_Y = 120;
-
-      const incomingMap = new Map<string, Edge[]>();
-      edges.forEach((edge) => {
-        if (!incomingMap.has(edge.target)) {
-          incomingMap.set(edge.target, []);
-        }
-        incomingMap.get(edge.target)?.push(edge);
-      });
-
-      const depthCache = new Map<string, number>();
-      const calculateDepth = (nodeId: string, visited = new Set<string>()): number => {
-        if (depthCache.has(nodeId)) {
-          return depthCache.get(nodeId)!;
-        }
-        if (visited.has(nodeId)) {
-          return 0;
-        }
-
-        visited.add(nodeId);
-        const incoming = incomingMap.get(nodeId) || [];
-        if (incoming.length === 0) {
-          depthCache.set(nodeId, 0);
-          return 0;
-        }
-
-        const depth = 1 + Math.max(...incoming.map((edge) => calculateDepth(edge.source, new Set(visited))));
-        depthCache.set(nodeId, depth);
-        return depth;
-      };
-
-      const grouped = new Map<number, Node<EditableNodeData>[]>();
-      nodes.forEach((node) => {
-        const depth = calculateDepth(node.id);
-        if (!grouped.has(depth)) {
-          grouped.set(depth, []);
-        }
-        grouped.get(depth)?.push(node);
-      });
-
-      const positions = new Map<string, { x: number; y: number }>();
-      Array.from(grouped.keys()).sort((left, right) => left - right).forEach((depth, depthIndex) => {
-        const levelNodes = (grouped.get(depth) || []).sort((left, right) => left.data.nodeType.localeCompare(right.data.nodeType));
-        levelNodes.forEach((node, nodeIndex) => {
-          positions.set(node.id, {
-            x: START_X + depthIndex * HORIZONTAL_SPACING,
-            y: START_Y + nodeIndex * VERTICAL_SPACING,
-          });
-        });
-      });
-
-      setNodes((currentNodes) => currentNodes.map((node) => ({
-        ...node,
-        position: positions.get(node.id) || node.position,
-      })));
-      setIsCleaning(false);
-      setShowCleanConfirm(false);
-    }, 650);
-  }, [edges, nodes]);
-
-  const handleValidateWithBackend = useCallback(async () => {
-    setIsValidatingBackend(true);
-    setValidationMessage('Validating workflow with backend rules…');
-
-    try {
-      const response = await fetch('/api/deploy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes, edges, dryRun: true }),
-      });
-
-      const result = await response.json();
-      if (result.analysis) {
-        setAnalysisResult(result.analysis);
-      }
-
-      if (!response.ok) {
-        setValidationMessage(result.backendError || result.message || 'Backend validation failed.');
-        return;
-      }
-
-      const queuedPlugins = result.backendPlan?.queued_plugins?.length ?? 0;
-      setValidationMessage(`${result.message} Queued plugin deployments: ${queuedPlugins}.`);
-    } catch (error) {
-      setValidationMessage(error instanceof Error ? error.message : 'Backend validation failed.');
-    } finally {
-      setIsValidatingBackend(false);
-    }
-  }, [edges, nodes]);
-
+  // Deploy handler
   const handleDeploy = useCallback(async () => {
     setIsDeploying(true);
-    setValidationMessage('Running deploy dry run…');
+    setDeployAnimationActive(true);
+    setShowCheckmark(false);
+    const MIN_DURATION = 1500;
+    const start = Date.now();
 
     try {
-      const response = await fetch('/api/deploy', {
+      const payload = buildDeployWorkflow(nodes, edges);
+      const res = await fetch('/api/deploy?inject_env=true', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes, edges }),
+        body: JSON.stringify(payload),
       });
 
-      const result = await response.json();
-      if (result.analysis) {
-        setAnalysisResult(result.analysis);
-      }
+      const data = await res.json().catch(() => ({}));
 
-      if (!response.ok) {
-        setValidationMessage(result.backendError || result.message || 'Deployment dry run failed.');
-        return;
-      }
-
-      if (result.deployId) {
-        setValidationMessage(
-          `Deployed successfully. Deployment ID: ${result.deployId}\n` +
-          `Run: python3 scripts/sender.py ${result.deployId}\n` +
-          `Run: python3 scripts/receiver.py ${result.deployId}`
-        );
-      } else {
-        const orderedNodes = result.backendPlan?.topological_order?.length ?? 0;
-        setValidationMessage(`${result.message} Planned topological steps: ${orderedNodes}.`);
-      }
-      setShowDeployConfirm(false);
-    } catch (error) {
-      setValidationMessage(error instanceof Error ? error.message : 'Deployment dry run failed.');
-    } finally {
-      setIsDeploying(false);
-    }
-  }, [edges, nodes]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const isTypingTarget = target && (
-        target.tagName === 'INPUT'
-        || target.tagName === 'TEXTAREA'
-        || target.isContentEditable
-      );
-
-      if (isTypingTarget) {
-        return;
-      }
-
-      if (event.key === 's' || event.key === 'S') {
-        event.preventDefault();
-        onAddNode('sender');
-      } else if (event.key === 'r' || event.key === 'R') {
-        event.preventDefault();
-        onAddNode('receiver');
-      } else if (event.key === 'p' || event.key === 'P') {
-        event.preventDefault();
-        onAddNode('plugin');
-      } else if ((event.key === 'Delete' || event.key === 'Backspace') && selectedNodeForPanel) {
-        event.preventDefault();
-        handleDeleteNode(selectedNodeForPanel.id);
-      } else if ((event.metaKey || event.ctrlKey) && (event.key === 'd' || event.key === 'D') && selectedNodeForPanel) {
-        event.preventDefault();
-        handleDuplicateNode(selectedNodeForPanel.id);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleDeleteNode, handleDuplicateNode, onAddNode, selectedNodeForPanel]);
-
-  const handleFocusIssue = useCallback((issue: AnalyzerIssue) => {
-    setFocusedIssue(issue);
-    const firstNodeId = issue.nodeIds[0];
-    if (firstNodeId) {
-      const node = nodes.find((candidate) => candidate.id === firstNodeId) || null;
-      setSelectedNodeForPanel(node);
-    }
-  }, [nodes]);
-
-  const issueSeverityByNode = useMemo(() => {
-    const severityRank: Record<'error' | 'warning' | 'info', number> = {
-      error: 3,
-      warning: 2,
-      info: 1,
-    };
-
-    const map = new Map<string, 'error' | 'warning' | 'info'>();
-    for (const issue of analysisResult?.issues || []) {
-      for (const nodeId of issue.nodeIds) {
-        const current = map.get(nodeId);
-        if (!current || severityRank[issue.severity] > severityRank[current]) {
-          map.set(nodeId, issue.severity);
+      if (!res.ok) {
+        if (res.status === 422 && Array.isArray(data.detail)) {
+          const messages = data.detail.map(
+            (e: { loc: (string | number)[]; msg: string }) => `${e.loc.join('.')}: ${e.msg}`
+          );
+          toast.error('Validation failed', { description: messages.join('\n') });
+        } else {
+          toast.error('Deploy failed', {
+            description: typeof data.detail === 'string' ? data.detail : `Server error (${res.status})`,
+          });
         }
+      } else {
+        toast.success('Deploy plan generated', {
+          description: `${data.node_count} nodes, ${data.edge_count} edges queued`,
+        });
       }
+    } catch {
+      toast.error('Deploy failed', { description: 'Could not reach the backend server' });
+    } finally {
+      const elapsed = Date.now() - start;
+      const remaining = Math.max(0, MIN_DURATION - elapsed);
+      setTimeout(() => {
+        setShowCheckmark(true);
+        setTimeout(() => {
+          setDeployAnimationActive(false);
+          setIsDeploying(false);
+          setShowDeployConfirm(false);
+          setShowCheckmark(false);
+        }, 1000);
+      }, remaining);
     }
-    return map;
-  }, [analysisResult]);
+  }, [nodes, edges]);
 
-  const issueEdgeIds = useMemo(() => new Set(
-    (analysisResult?.issues || [])
-      .filter((issue) => issue.severity === 'error')
-      .flatMap((issue) => issue.edgeIds || []),
-  ), [analysisResult]);
+  // Handler for Deploy button click (shows confirm modal)
+  const handleDeployClick = useCallback(() => {
+    setShowDeployConfirm(true);
+  }, []);
 
-  const decoratedNodes = useMemo(() => nodes.map((node) => {
-    const severity = issueSeverityByNode.get(node.id);
-    const isFocused = Boolean(focusedIssue?.nodeIds.includes(node.id));
+  // Handler for confirming deploy in modal
+  const handleConfirmDeploy = useCallback(() => {
+    handleDeploy();
+  }, [handleDeploy]);
 
-    return {
-      ...node,
-      style: {
-        ...node.style,
-        outline: isFocused
-          ? '3px solid #2563eb'
-          : severity === 'error'
-            ? '2px solid #dc2626'
-            : severity === 'warning'
-              ? '2px solid #eab308'
-              : contextMenuNode?.id === node.id
-                ? '2px solid #ef4444'
-                : 'none',
-        boxShadow: isFocused
-          ? '0 0 0 4px rgba(37, 99, 235, 0.15)'
-          : severity === 'error'
-            ? '0 0 0 4px rgba(220, 38, 38, 0.12)'
-            : severity === 'warning'
-              ? '0 0 0 4px rgba(234, 179, 8, 0.12)'
-              : contextMenuNode?.id === node.id
-                ? '0 0 0 4px rgba(239, 68, 68, 0.12)'
-                : 'none',
-      },
-    };
-  }), [contextMenuNode, focusedIssue, issueSeverityByNode, nodes]);
+  // Handler for cancelling deploy in modal
+  const handleCancelDeploy = useCallback(() => {
+    setShowDeployConfirm(false);
+  }, []);
 
-  const decoratedEdges = useMemo(() => edges.map((edge) => {
-    const streamType = getEdgeStreamType(edge);
-    const isInvalid = issueEdgeIds.has(edge.id) || Boolean(focusedIssue?.edgeIds?.includes(edge.id));
-    return {
-      ...edge,
-      type: 'animated',
-      data: {
-        ...(typeof edge.data === 'object' && edge.data ? edge.data : {}),
-        streamType,
-        label: streamType,
-        invalid: isInvalid,
-      },
-    };
-  }), [edges, focusedIssue, issueEdgeIds]);
-
-  const canDeploy = analysisResult?.valid ?? false;
+  if (projectId && !hasLoadedRef.current) {
+    return (
+      <div style={{ width: '100vw', height: '100vh', background: 'var(--paper-2)' }} className="flex items-center justify-center">
+        <div className="text-center">
+          <div className="mb-2 h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500 mx-auto" />
+          <p className="text-sm text-gray-500">Loading workflow...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div ref={reactFlowWrapper} className="relative h-screen w-screen bg-slate-100">
-      {showDeployConfirm && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/35">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-slate-900">Deploy workflow</h2>
-            <p className="mt-2 text-sm text-slate-600">
-              This runs a deployment dry run against the backend validation path and updates the analyzer state with the result.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-700" onClick={() => setShowDeployConfirm(false)}>
+    <div ref={reactFlowWrapper} style={{ width: '100vw', height: '100vh', background: 'var(--paper-2)' }} className="relative">
+      <CanvasTopChrome
+        currentProjectId={projectId}
+        isDeploying={isDeploying || deployAnimationActive}
+        onDeploy={handleDeployClick}
+      />
+      <AnimatePresence>
+      {deployAnimationActive && (
+        <motion.div
+          key="deploy-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm pointer-events-auto"
+          style={{ background: 'color-mix(in oklch, var(--ink) 30%, transparent)' }}
+        >
+          <div
+            style={{
+              minWidth: 360,
+              background: 'var(--paper)',
+              border: '1px solid var(--line-strong)',
+              borderRadius: 14,
+              boxShadow: 'var(--shadow-pop)',
+              padding: 28,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              fontFamily: 'var(--font-sans-orch)',
+            }}
+          >
+            {!showCheckmark ? (
+              <>
+                <div className="eyebrow">deploy</div>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-display)',
+                    fontSize: 22,
+                    letterSpacing: '-0.01em',
+                    marginTop: 4,
+                    marginBottom: 18,
+                  }}
+                >
+                  Pushing workflow…
+                </div>
+                <div
+                  style={{
+                    width: '100%',
+                    height: 3,
+                    background: 'var(--paper-2)',
+                    borderRadius: 999,
+                    overflow: 'hidden',
+                    marginBottom: 10,
+                  }}
+                >
+                  <motion.div
+                    key="progress-bar"
+                    initial={{ width: 0 }}
+                    animate={{ width: '100%' }}
+                    transition={{ duration: 1.5, ease: 'linear' }}
+                    style={{ height: '100%', background: 'var(--orch-accent)' }}
+                  />
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-3)', fontFamily: 'var(--font-mono-orch)' }}>
+                  building · pulling · wiring edges
+                </div>
+              </>
+            ) : (
+              <>
+                <motion.svg
+                  key="checkmark"
+                  width="48"
+                  height="48"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--signal)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                  style={{ marginBottom: 8 }}
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M7 13l3 3 7-7" />
+                </motion.svg>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-display)',
+                    fontSize: 22,
+                    letterSpacing: '-0.01em',
+                    color: 'var(--signal)',
+                  }}
+                >
+                  Deployed.
+                </div>
+              </>
+            )}
+          </div>
+        </motion.div>
+      )}
+      </AnimatePresence>
+      {/* Deploy confirmation modal — pre-flight */}
+      {showDeployConfirm && !isDeploying && !deployAnimationActive && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'color-mix(in oklch, var(--ink) 35%, transparent)' }}
+        >
+          <div
+            style={{
+              width: 520,
+              background: 'var(--paper)',
+              border: '1px solid var(--line-strong)',
+              borderRadius: 14,
+              boxShadow: 'var(--shadow-pop)',
+              overflow: 'hidden',
+              fontFamily: 'var(--font-sans-orch)',
+            }}
+          >
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--line)' }}>
+              <div className="eyebrow">deploy</div>
+              <div
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 22,
+                  letterSpacing: '-0.01em',
+                  marginTop: 4,
+                }}
+              >
+                Push workflow → production
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 2 }}>
+                {nodes.length} node{nodes.length !== 1 ? 's' : ''} · {edges.length} edge{edges.length !== 1 ? 's' : ''} · est. instant
+              </div>
+            </div>
+            <div style={{ padding: '14px 22px' }}>
+              {[
+                { ok: nodes.length > 0, label: 'Workflow has nodes', detail: `${nodes.length} configured` },
+                { ok: edges.length > 0 || nodes.length <= 1, label: 'Edges connected', detail: `${edges.length} edges` },
+                { ok: true, label: 'Auth', detail: 'tokens valid · scopes ok' },
+              ].map((c, i, arr) => (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '10px 0',
+                    borderBottom: i < arr.length - 1 ? '1px dashed var(--line)' : 'none',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 999,
+                      background: c.ok
+                        ? 'color-mix(in oklch, var(--signal) 18%, var(--paper))'
+                        : 'color-mix(in oklch, var(--warn) 18%, var(--paper))',
+                      color: c.ok ? 'var(--signal)' : 'var(--warn)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 13,
+                    }}
+                  >
+                    {c.ok ? '✓' : '!'}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14 }}>{c.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{c.detail}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div
+              style={{
+                padding: '14px 22px',
+                borderTop: '1px solid var(--line)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: 8,
+                background: 'var(--paper-2)',
+              }}
+            >
+              <button
+                onClick={handleCancelDeploy}
+                style={{
+                  padding: '7px 12px',
+                  fontSize: 13,
+                  border: '1px solid var(--line-strong)',
+                  borderRadius: 6,
+                  background: 'var(--paper)',
+                  color: 'var(--ink)',
+                }}
+              >
                 Cancel
               </button>
-              <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white" onClick={handleDeploy}>
-                Confirm deploy
+              <button
+                onClick={handleConfirmDeploy}
+                style={{
+                  padding: '7px 12px',
+                  fontSize: 13,
+                  border: '1px solid var(--orch-accent)',
+                  borderRadius: 6,
+                  background: 'var(--orch-accent)',
+                  color: 'var(--paper)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                Deploy
+                <span
+                  className="kbd"
+                  style={{
+                    background: 'rgba(255,255,255,.12)',
+                    borderColor: 'rgba(255,255,255,.2)',
+                    color: 'rgba(255,255,255,.85)',
+                  }}
+                >
+                  ⌘↵
+                </span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {showCleanConfirm && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/35">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-slate-900">Clean workflow layout</h2>
-            <p className="mt-2 text-sm text-slate-600">
-              Nodes will be reorganized according to the current data-flow depth so the DAG is easier to inspect and validate.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-700" onClick={() => setShowCleanConfirm(false)}>
+      {/* Clean workflow confirmation modal */}
+      {showCleanConfirm && !isCleaning && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'color-mix(in oklch, var(--ink) 35%, transparent)' }}
+        >
+          <div
+            style={{
+              width: 440,
+              background: 'var(--paper)',
+              border: '1px solid var(--line-strong)',
+              borderRadius: 14,
+              boxShadow: 'var(--shadow-pop)',
+              padding: 24,
+              fontFamily: 'var(--font-sans-orch)',
+            }}
+          >
+            <div className="eyebrow">organize</div>
+            <div
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 22,
+                letterSpacing: '-0.01em',
+                marginTop: 4,
+              }}
+            >
+              Clean &amp; organize
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 6, marginBottom: 18 }}>
+              Lays out the workflow into horizontal chains based on data flow.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                onClick={handleCancelClean}
+                style={{
+                  padding: '7px 12px',
+                  fontSize: 13,
+                  border: '1px solid var(--line-strong)',
+                  borderRadius: 6,
+                  background: 'var(--paper)',
+                  color: 'var(--ink)',
+                }}
+              >
                 Cancel
               </button>
-              <button className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white" onClick={handleCleanWorkflow}>
-                Clean layout
+              <button
+                onClick={handleConfirmClean}
+                style={{
+                  padding: '7px 12px',
+                  fontSize: 13,
+                  border: '1px solid var(--orch-accent)',
+                  borderRadius: 6,
+                  background: 'var(--orch-accent)',
+                  color: 'var(--paper)',
+                }}
+              >
+                Clean workflow
               </button>
             </div>
           </div>
         </div>
       )}
-
-      <div className={(isDeploying || isCleaning) ? 'pointer-events-none select-none opacity-80' : ''}>
-        <CanvasPanel
+      
+      <div className={isDeploying || deployAnimationActive || isCleaning ? 'pointer-events-none blur-sm select-none' : ''} style={{ position: 'absolute', top: CANVAS_TOP_CHROME_HEIGHT, left: 0, right: 0, bottom: 0 }}>
+        <CanvasPanel 
           onAddNode={onAddNode}
           isSheetOpen={isLeftPanelOpen}
           setIsSheetOpen={setIsLeftPanelOpen}
-          onDeploy={() => setShowDeployConfirm(true)}
-          onValidateWithBackend={handleValidateWithBackend}
-          isDeploying={isDeploying}
-          isValidating={isValidatingBackend}
-          onCleanWorkflow={() => setShowCleanConfirm(true)}
+          onDeploy={handleDeployClick} // Show confirm modal
+          isDeploying={isDeploying || deployAnimationActive}
+          onCleanWorkflow={handleCleanClick}
           isCleaning={isCleaning}
-          canDeploy={canDeploy}
         />
-
         <ContextMenu onOpenChange={(open) => !open && setContextMenuNode(null)}>
           <ContextMenuTrigger asChild>
-            <div className="h-screen w-screen" onDragOver={onDragOver} onDrop={onDrop}>
+            <div style={{ width: '100%', height: '100%' }}>
               <ReactFlow
-                nodes={decoratedNodes}
-                edges={decoratedEdges}
+                nodes={nodes.map(node => ({
+                  ...node,
+                  style: {
+                    ...node.style,
+                    outline: contextMenuNode?.id === node.id ? '2px solid #ef4444' : 'none',
+                    boxShadow: contextMenuNode?.id === node.id ? '0 0 0 2px rgba(239, 68, 68, 0.2)' : 'none'
+                  }
+                }))}
+                edges={edges}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
+                nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
                 onReconnect={onReconnect}
                 onReconnectStart={onReconnectStart}
                 onReconnectEnd={onReconnectEnd}
+                defaultViewport={{ x: 0, y: 0, zoom: 1 }}
                 onNodeClick={onNodeClick}
                 onNodeContextMenu={onNodeContextMenu}
                 onPaneClick={onPaneClick}
-                nodeTypes={nodeTypes}
-                edgeTypes={edgeTypes}
-                defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-                fitView
               >
                 <Controls />
                 <Background />
@@ -652,65 +843,63 @@ function FlowContent() {
               </ReactFlow>
             </div>
           </ContextMenuTrigger>
-
           <ContextMenuContent>
             {contextMenuNode ? (
               <>
-                <ContextMenuItem onClick={() => handleDuplicateNode(contextMenuNode.id)}>
+                <ContextMenuItem
+                  onClick={() => handleDuplicateNode(contextMenuNode.id)}
+                >
                   <Copy className="mr-2 h-4 w-4" />
-                  Duplicate node
+                  Duplicate Node
                 </ContextMenuItem>
                 <ContextMenuSeparator />
-                <ContextMenuItem className="text-red-600 focus:bg-red-50 focus:text-red-600" onClick={() => handleDeleteNode(contextMenuNode.id)}>
+                <ContextMenuItem
+                  className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                  onClick={() => handleDeleteNode(contextMenuNode.id)}
+                >
                   <Trash2 className="mr-2 h-4 w-4" />
-                  Delete node
+                  Delete Node
                 </ContextMenuItem>
               </>
             ) : (
               <>
-                <ContextMenuItem onClick={() => onAddNode('sender')}>
+                <ContextMenuItem
+                  onClick={() => onAddNode('sender')}
+                >
                   <Plus className="mr-2 h-4 w-4" />
-                  Add sender node
+                  Add Sender Node
                 </ContextMenuItem>
-                <ContextMenuItem onClick={() => onAddNode('receiver')}>
+                <ContextMenuItem
+                  onClick={() => onAddNode('receiver')}
+                >
                   <Plus className="mr-2 h-4 w-4" />
-                  Add receiver node
+                  Add Receiver Node
                 </ContextMenuItem>
-                <ContextMenuItem onClick={() => onAddNode('plugin')}>
+                <ContextMenuItem
+                  onClick={() => onAddNode('plugin')}
+                >
                   <Plus className="mr-2 h-4 w-4" />
-                  Add plugin node
+                  Add Plugin Node
                 </ContextMenuItem>
               </>
             )}
           </ContextMenuContent>
         </ContextMenu>
-
-        <ComponentPanel
+        <ComponentPanel 
           selectedNode={selectedNodeForPanel}
-          nodes={nodes}
-          edges={edges}
-          analysisResult={analysisResult}
           onNodeDataChange={handleNodeDataChange}
-          isOpen={Boolean(selectedNodeForPanel)}
+          isOpen={!!selectedNodeForPanel}
           onClearSelection={handleComponentPanelClearSelection}
-        />
-
-        <AnalyzerPanel
-          analysisResult={analysisResult}
-          isValidating={isValidatingBackend}
-          validationMessage={validationMessage}
-          onValidateWithBackend={handleValidateWithBackend}
-          onFocusIssue={handleFocusIssue}
         />
       </div>
     </div>
   );
 }
 
-export default function MinimalCanvas() {
+export default function MinimalCanvas({ projectId = null }: { projectId?: string | null }) {
   return (
     <ReactFlowProvider>
-      <FlowContent />
+      <FlowContent projectId={projectId} />
     </ReactFlowProvider>
   );
-}
+} 

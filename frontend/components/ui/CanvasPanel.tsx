@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState, type DragEvent, type ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useState, useMemo } from 'react';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetContent,
@@ -10,270 +10,272 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@/components/ui/sheet';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import type { NodeTemplate, NodeType } from '@/lib/types';
-import { nodeTemplates, templatesByType } from '@/lib/nodeTemplates';
-import { ChevronDown, Inbox, Keyboard, Puzzle, Search, Send, Sparkles } from 'lucide-react';
+} from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import type { NodeType, NodeTemplate } from '../../lib/types';
+import { nodeTemplates, templatesByType } from '../../lib/nodeTemplates';
+import { Send, Inbox, Puzzle, ChevronDown, Plus, Search, Sparkles } from 'lucide-react';
+
+// Editorial palette — maps each node type to a token-driven background/foreground.
+const nodeTypesPalette = [
+  { type: 'sender', label: 'Sender', token: 't-source', icon: <Send className="inline-block mr-1 h-4 w-4" /> },
+  { type: 'receiver', label: 'Receiver', token: 't-sink', icon: <Inbox className="inline-block mr-1 h-4 w-4" /> },
+  { type: 'plugin', label: 'Plugin', token: 't-transform', icon: <Puzzle className="inline-block mr-1 h-4 w-4" /> },
+];
 
 interface CanvasPanelProps {
   onAddNode: (type: NodeType, template?: NodeTemplate) => void;
   isSheetOpen: boolean;
   setIsSheetOpen: (isOpen: boolean) => void;
   onDeploy: () => void;
-  onValidateWithBackend: () => void;
   isDeploying: boolean;
-  isValidating: boolean;
   onCleanWorkflow: () => void;
   isCleaning: boolean;
-  canDeploy: boolean;
 }
 
-const quickAddPalette: Array<{
-  type: NodeType;
-  label: string;
-  shortcut: string;
-  description: string;
-  icon: ReactNode;
-  className: string;
-}> = [
-  {
-    type: 'sender',
-    label: 'Sender',
-    shortcut: 'S',
-    description: 'Create source nodes that emit data into the DAG.',
-    icon: <Send className="h-4 w-4 text-blue-600" />,
-    className: 'border-blue-200 bg-blue-50 hover:bg-blue-100',
-  },
-  {
-    type: 'receiver',
-    label: 'Receiver',
-    shortcut: 'R',
-    description: 'Create terminal nodes that consume workflow outputs.',
-    icon: <Inbox className="h-4 w-4 text-emerald-600" />,
-    className: 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100',
-  },
-  {
-    type: 'plugin',
-    label: 'Plugin',
-    shortcut: 'P',
-    description: 'Create processing steps that transform or route data.',
-    icon: <Puzzle className="h-4 w-4 text-violet-600" />,
-    className: 'border-violet-200 bg-violet-50 hover:bg-violet-100',
-  },
-];
-
-function TemplateButton({
-  template,
-  onSelect,
-}: {
-  template: NodeTemplate;
-  onSelect: (template: NodeTemplate) => void;
-}) {
-  const handleDragStart = (event: DragEvent<HTMLButtonElement>) => {
-    event.dataTransfer.setData('application/reactflow-type', template.type);
-    event.dataTransfer.setData('application/reactflow-template', JSON.stringify(template));
-    event.dataTransfer.effectAllowed = 'move';
-  };
-
-  return (
-    <button
-      type="button"
-      draggable
-      onDragStart={handleDragStart}
-      onClick={() => onSelect(template)}
-      className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:shadow-sm"
-      title="Click to add at center or drag onto the canvas"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-slate-900">{template.name}</span>
-        <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-500">
-          {template.type}
-        </span>
-      </div>
-      <p className="mt-1 text-xs text-slate-600">{template.description}</p>
-    </button>
-  );
-}
-
-export default function CanvasPanel({
-  onAddNode,
-  isSheetOpen,
-  setIsSheetOpen,
-  onDeploy,
-  onValidateWithBackend,
-  isDeploying,
-  isValidating,
-  onCleanWorkflow,
-  isCleaning,
-  canDeploy,
-}: CanvasPanelProps) {
+export default function CanvasPanel({ onAddNode, isSheetOpen, setIsSheetOpen, onDeploy, isDeploying, onCleanWorkflow, isCleaning }: CanvasPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [openSections, setOpenSections] = useState<Record<NodeType, boolean>>({
-    sender: true,
-    receiver: true,
-    plugin: true,
-  });
-
-  const filteredTemplates = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) {
-      return [];
-    }
-
-    return nodeTemplates.filter((template) => {
-      return [template.name, template.description, template.type, template.category]
-        .join(' ')
-        .toLowerCase()
-        .includes(query);
-    });
-  }, [searchQuery]);
 
   const handleTemplateSelect = (template: NodeTemplate) => {
     onAddNode(template.type, template);
     setSearchQuery('');
   };
 
-  const handleQuickAddDragStart = (event: DragEvent<HTMLButtonElement>, type: NodeType) => {
-    event.dataTransfer.setData('application/reactflow-type', type);
-    event.dataTransfer.effectAllowed = 'move';
+  // Filter templates based on search query
+  const filteredTemplates = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    return nodeTemplates.filter((template: NodeTemplate) => 
+      template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      template.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      template.type.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [searchQuery]);
+
+  const renderTemplateDropdown = (type: NodeType, icon: React.ReactNode, label: string, bgColor: string) => {
+    const templates = templatesByType[type] || [];
+    
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button 
+            variant="outline" 
+            className={`flex-1 justify-between ${bgColor} border-0 shadow-sm hover:shadow-md transition-shadow`}
+            size="sm"
+          >
+            <span className="flex items-center gap-1 text-xs">
+              {icon}
+              {label}
+            </span>
+            <ChevronDown className="h-3 w-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-72" align="start">
+          <DropdownMenuLabel className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            {label} Templates
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {templates.map((template) => (
+            <DropdownMenuItem
+              key={template.id}
+              onClick={() => handleTemplateSelect(template)}
+              className="flex flex-col items-start gap-1 p-3 cursor-pointer hover:bg-gray-50"
+            >
+              <div className="flex items-center gap-2 w-full">
+                {icon}
+                <span className="font-medium text-sm">{template.name}</span>
+              </div>
+              <p className="text-xs text-gray-500 leading-tight">{template.description}</p>
+            </DropdownMenuItem>
+          ))}
+          {templates.length === 0 && (
+            <DropdownMenuItem disabled className="text-xs text-gray-400">
+              No templates available
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
   };
 
   return (
     <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen} modal={false}>
       <SheetTrigger asChild>
-        <Button variant="outline" className="absolute left-4 top-4 z-20" onClick={() => setIsSheetOpen(!isSheetOpen)}>
-          {isSheetOpen ? 'Hide Controls' : 'Show Controls'}
-        </Button>
+        <button
+          onClick={() => setIsSheetOpen(!isSheetOpen)}
+          className="absolute z-10 inline-flex items-center gap-2 rounded transition-colors"
+          style={{
+            top: 72,
+            left: 16,
+            padding: '6px 10px',
+            background: 'var(--paper)',
+            border: '1px solid var(--line-strong)',
+            color: 'var(--ink-2)',
+            fontSize: 12,
+            boxShadow: 'var(--shadow-card)',
+            fontFamily: 'var(--font-sans-orch)',
+          }}
+        >
+          {isSheetOpen ? 'Hide library' : 'Show library'}
+          <span className="kbd">N</span>
+        </button>
       </SheetTrigger>
-
       <SheetContent
         side="left"
-        className="w-[340px] overflow-y-auto sm:w-[400px]"
-        onInteractOutside={(event) => event.preventDefault()}
-        onEscapeKeyDown={(event) => event.preventDefault()}
+        className="w-[320px] sm:w-[380px]"
+        style={{ background: 'var(--paper)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+        onInteractOutside={(e) => { e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { e.preventDefault(); }}
       >
         <SheetHeader>
-          <SheetTitle>Workflow Editor</SheetTitle>
-          <SheetDescription>
-            Use a single maintained editor path for node creation, inspection, validation, and deploy preparation.
+          <div className="eyebrow">Library</div>
+          <SheetTitle style={{ fontFamily: 'var(--font-display)', fontSize: 24, letterSpacing: '-0.01em' }}>
+            Drag to canvas
+          </SheetTitle>
+          <SheetDescription style={{ color: 'var(--ink-3)' }}>
+            Quick-add nodes or browse templates by type.
           </SheetDescription>
         </SheetHeader>
-
-        <div className="mt-6 space-y-5">
-          <section className="space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-slate-900">
-              <Keyboard className="h-4 w-4 text-slate-500" />
-              Keyboard shortcuts
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-xs text-slate-600">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center">S = Sender</div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center">R = Receiver</div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center">P = Plugin</div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center col-span-3">Delete / Backspace = Remove selected node</div>
-            </div>
-          </section>
-
-          <section className="space-y-3">
-            <div className="text-sm font-medium text-slate-900">Quick add or drag onto canvas</div>
-            <div className="grid gap-2">
-              {quickAddPalette.map((entry) => (
+        
+        <div className="grid gap-4 py-4">
+          {/* Quick Add Buttons */}
+          <div className="space-y-2">
+            <div className="eyebrow">Quick add</div>
+            <div className="flex gap-2">
+              {nodeTypesPalette.map(nt => (
                 <button
-                  key={entry.type}
-                  type="button"
-                  draggable
-                  onDragStart={(event) => handleQuickAddDragStart(event, entry.type)}
-                  onClick={() => onAddNode(entry.type)}
-                  className={`rounded-xl border p-3 text-left transition ${entry.className}`}
-                  title="Click to add at center or drag onto the canvas"
+                  key={nt.type}
+                  onClick={() => onAddNode(nt.type as NodeType)}
+                  title={`Add Basic ${nt.label}`}
+                  className="flex flex-1 items-center justify-center gap-1 rounded-md border text-xs transition-colors"
+                  style={{
+                    padding: '8px 10px',
+                    background: `color-mix(in oklch, var(--${nt.token}) 8%, var(--paper))`,
+                    color: `var(--${nt.token})`,
+                    borderColor: `color-mix(in oklch, var(--${nt.token}) 24%, var(--line))`,
+                    fontWeight: 500,
+                  }}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                      {entry.icon}
-                      {entry.label}
-                    </span>
-                    <span className="rounded bg-white/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                      {entry.shortcut}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-600">{entry.description}</p>
+                  {nt.icon}
+                  {nt.label}
                 </button>
               ))}
             </div>
-          </section>
+          </div>
 
-          <section className="space-y-3">
-            <label className="text-sm font-medium text-slate-900">Search templates</label>
+          {/* Template Search */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700">Search Templates</label>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
                 type="text"
+                placeholder="Search all templates..."
                 value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                className="pl-9"
-                placeholder="Search by node name, type, or category"
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
               />
             </div>
-
+            
+            {/* Search Results */}
             {searchQuery.trim() && (
-              <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+              <div className="max-h-48 overflow-y-auto border rounded-md bg-white">
                 {filteredTemplates.length > 0 ? (
                   filteredTemplates.map((template) => (
-                    <TemplateButton key={template.id} template={template} onSelect={handleTemplateSelect} />
+                    <div
+                      key={template.id}
+                      onClick={() => handleTemplateSelect(template)}
+                      className="flex flex-col gap-1 p-3 cursor-pointer hover:bg-gray-50 border-b last:border-b-0"
+                    >
+                      <div className="flex items-center gap-2">
+                        {template.type === 'sender' && <Send className="h-4 w-4 text-blue-600" />}
+                        {template.type === 'receiver' && <Inbox className="h-4 w-4 text-green-600" />}
+                        {template.type === 'plugin' && <Puzzle className="h-4 w-4 text-purple-600" />}
+                        <span className="font-medium text-sm">{template.name}</span>
+                        <span className="text-xs text-gray-400 capitalize bg-gray-100 px-1 rounded">
+                          {template.type}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500">{template.description}</p>
+                    </div>
                   ))
                 ) : (
-                  <div className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-6 text-center text-xs text-slate-500">
-                    No templates matched “{searchQuery}”.
+                  <div className="p-3 text-xs text-gray-400 text-center">
+                    No templates found matching "{searchQuery}"
                   </div>
                 )}
               </div>
             )}
-          </section>
+          </div>
 
-          <section className="space-y-3">
-            <div className="text-sm font-medium text-slate-900">Template categories</div>
-            {(['sender', 'receiver', 'plugin'] as NodeType[]).map((type) => (
-              <Collapsible
-                key={type}
-                open={openSections[type]}
-                onOpenChange={(isOpen) => setOpenSections((current) => ({ ...current, [type]: isOpen }))}
-              >
-                <div className="rounded-xl border border-slate-200 bg-slate-50">
-                  <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-3 text-left text-sm font-medium text-slate-900">
-                    <span className="capitalize">{type}s</span>
-                    <ChevronDown className={`h-4 w-4 text-slate-500 transition ${openSections[type] ? 'rotate-180' : ''}`} />
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-2 border-t border-slate-200 p-3">
-                    {templatesByType[type].map((template) => (
-                      <TemplateButton key={template.id} template={template} onSelect={handleTemplateSelect} />
-                    ))}
-                  </CollapsibleContent>
-                </div>
-              </Collapsible>
-            ))}
-          </section>
+          {/* Separate Template Dropdowns */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700">Template Categories</label>
+            <div className="grid gap-2">
+              {renderTemplateDropdown(
+                'sender', 
+                <Send className="h-3 w-3 text-blue-600" />, 
+                'Senders',
+                'bg-blue-50 hover:bg-blue-100'
+              )}
+              {renderTemplateDropdown(
+                'receiver', 
+                <Inbox className="h-3 w-3 text-green-600" />, 
+                'Receivers',
+                'bg-green-50 hover:bg-green-100'
+              )}
+              {renderTemplateDropdown(
+                'plugin', 
+                <Puzzle className="h-3 w-3 text-purple-600" />, 
+                'Plugins',
+                'bg-purple-50 hover:bg-purple-100'
+              )}
+            </div>
+          </div>
 
-          <section className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="text-sm font-medium text-slate-900">Deploy preparation</div>
-            <p className="text-xs text-slate-600">
-              Run the analyzer continuously, validate against backend rules on demand, and only deploy when blockers are cleared.
-            </p>
-            <Button variant="outline" onClick={onValidateWithBackend} disabled={isValidating || isDeploying} className="w-full">
-              {isValidating ? 'Validating…' : 'Validate with Backend'}
-            </Button>
-            <Button onClick={onDeploy} disabled={!canDeploy || isDeploying || isValidating} className="w-full">
-              {isDeploying ? 'Deploying…' : canDeploy ? 'Deploy Workflow' : 'Resolve blockers before deploy'}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={onCleanWorkflow}
-              disabled={isCleaning || isDeploying || isValidating}
-              className="w-full"
-            >
-              {!isCleaning && <Sparkles className="mr-2 h-4 w-4" />}
-              {isCleaning ? 'Cleaning…' : 'Clean Workflow Layout'}
-            </Button>
-          </section>
+          <div className="text-xs text-gray-500 mb-2 flex items-center gap-3 justify-center">
+            <span className="inline-flex items-center"><Send className="h-3 w-3 text-blue-600 mr-1" /> Sender</span>
+            <span className="inline-flex items-center"><Inbox className="h-3 w-3 text-green-600 mr-1" /> Receiver</span>
+            <span className="inline-flex items-center"><Puzzle className="h-3 w-3 text-purple-600 mr-1" /> Plugin</span>
+          </div>
+          
+          <Button
+            variant={isDeploying ? "default" : "secondary"}
+            onClick={onDeploy}
+            disabled={isDeploying}
+            className={isDeploying ? "relative bg-blue-600 text-white animate-pulse" : ""}
+          >
+            {isDeploying && (
+              <svg className="animate-spin h-4 w-4 mr-2 inline-block text-white" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+            )}
+            {isDeploying ? 'Deploying...' : 'Deploy'}
+          </Button>
+          
+          <Button
+            variant={isCleaning ? "default" : "outline"}
+            onClick={onCleanWorkflow}
+            disabled={isCleaning || isDeploying}
+            className={isCleaning ? "relative bg-purple-600 text-white animate-pulse mt-2" : "mt-2"}
+          >
+            {isCleaning && (
+              <svg className="animate-spin h-4 w-4 mr-2 inline-block text-white" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+            )}
+            {!isCleaning && <Sparkles className="h-4 w-4 mr-2" />}
+            {isCleaning ? 'Cleaning...' : 'Clean Workflow'}
+          </Button>
         </div>
       </SheetContent>
     </Sheet>
