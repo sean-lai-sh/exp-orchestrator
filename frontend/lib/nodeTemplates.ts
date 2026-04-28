@@ -150,12 +150,12 @@ export const nodeTemplates: NodeTemplate[] = [
       description: 'Shifts letters in the alphabet by a fixed number for encryption/decryption',
       nodeType: 'plugin' as const,
       runtime: 'caesar_cipher:latest',
-      sources: ['encrypted_text', 'cipher_key'],
+      sources: ['ciphertext'],
       access_types: {
         canSend: true,
         canReceive: true,
-        allowedSendTypes: ['text', 'json', 'cipher_key'],
-        allowedReceiveTypes: ['text', 'json', 'shift_value']
+        allowedSendTypes: ['ciphertext', 'json'],
+        allowedReceiveTypes: ['plaintext', 'json']
       }
     } as Partial<PluginNodeData>
   },
