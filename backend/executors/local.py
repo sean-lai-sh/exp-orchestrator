@@ -56,10 +56,16 @@ class LocalDockerExecutor(Executor):
         )
 
     async def stop(self, container_id: str) -> bool:
-        """Stop a local container."""
+        """Stop and remove a local container.
+
+        `docker stop` alone leaves the container in Exited state still claiming
+        the name and (sometimes) ports. The orchestrator should fully release
+        the resource on teardown — `docker rm -f` is the idempotent equivalent
+        of stop+rm, so use that to ensure the next deploy starts clean.
+        """
         try:
             result = subprocess.run(
-                ["docker", "stop", container_id],
+                ["docker", "rm", "-f", container_id],
                 capture_output=True,
                 timeout=30,
             )
