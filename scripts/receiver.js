@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 /**
- * Standalone receiver that auto-connects via corelink (default) or relay.
- * Usage: node receiver.js <deploy_id> [--mode corelink|relay] [--host URL]
+ * Standalone receiver that auto-connects via NATS (default) or relay.
+ * Usage: node receiver.js <deploy_id> [--mode nats|relay] [--host URL] [--nats-host HOST]
  */
 
 function parseArgs(argv) {
-  const args = { mode: 'corelink', host: 'http://localhost:8000', corelinkHost: null }
+  const args = { mode: 'nats', host: 'http://localhost:8000', natsHost: null }
   const positional = []
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i]
     if (a === '--mode') args.mode = argv[++i]
     else if (a === '--host') args.host = argv[++i]
-    else if (a === '--corelink-host') args.corelinkHost = argv[++i]
+    else if (a === '--nats-host') args.natsHost = argv[++i]
     else if (a.startsWith('--')) { console.error(`unknown flag: ${a}`); process.exit(2) }
     else positional.push(a)
   }
   if (positional.length !== 1) {
-    console.error('usage: receiver.js <deploy_id> [--mode corelink|relay] [--host URL] [--corelink-host HOST]')
+    console.error('usage: receiver.js <deploy_id> [--mode nats|relay] [--host URL] [--nats-host HOST]')
     process.exit(2)
   }
   args.deployId = positional[0]
@@ -35,18 +35,16 @@ async function fetchCredentials(host, deployId, role) {
 
 async function main() {
   const args = parseArgs(process.argv)
-  const transport = args.mode === 'corelink'
-    ? require('./lib/corelink-transport')
+  const transport = args.mode === 'nats'
+    ? require('./lib/nats-transport')
     : require('./lib/relay-transport')
 
   console.log(`Mode: ${args.mode}`)
   const cred = await fetchCredentials(args.host, args.deployId, 'receiver')
 
-  // Allow CLI override of the corelink host (useful when the plugin container
-  // and the host process need different hostnames to reach the same server).
-  const corelinkBlock = cred.corelink && args.corelinkHost
-    ? { ...cred.corelink, host: args.corelinkHost }
-    : cred.corelink
+  const natsBlock = cred.nats && args.natsHost
+    ? { ...cred.nats, host: args.natsHost, url: `nats://${args.natsHost}:${cred.nats.port}` }
+    : cred.nats
 
   let handle
   try {
@@ -55,11 +53,11 @@ async function main() {
       deployId: args.deployId,
       role: 'receiver',
       credentials: cred.credentials,
-      corelinkBlock,
+      natsBlock,
     })
   } catch (e) {
     console.error(`Connect failed (${args.mode}): ${e.message}`)
-    if (args.mode === 'corelink') console.error('Try --mode relay as a fallback.')
+    if (args.mode === 'nats') console.error('Try --mode relay as a fallback.')
     process.exit(1)
   }
 
@@ -75,12 +73,10 @@ async function main() {
   }
 
   console.log('Listening for messages (Ctrl+C to quit)...\n')
-
-  // Keep alive. Do NOT register our own SIGINT handler — the vendored
-  // corelink.lib.js already installs one that calls its exit() and
-  // process.exit(). Adding ours on top makes exit() fire twice and
-  // dumps duplicate "Trying to exit. options { streamIDs: [...] }"
-  // messages to the console.
+  process.on('SIGINT', async () => {
+    await transport.close(handle).catch(() => {})
+    process.exit(0)
+  })
   await new Promise(() => {})
 }
 

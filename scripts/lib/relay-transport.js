@@ -1,7 +1,6 @@
 /**
  * Relay transport — sends/subscribes via the orchestrator backend's HTTP/SSE
- * endpoints. No Corelink dependency; this is the long-term path that remains
- * after Corelink is ripped out.
+ * endpoints. Pure HTTP; useful as a fallback when the broker is unreachable.
  */
 
 const httpStream = require('http')
