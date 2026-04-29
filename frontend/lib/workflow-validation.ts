@@ -68,8 +68,8 @@ export function getEdgeStreamType(edge: Edge): string {
     const record = data as Record<string, unknown>;
     // sourceHandle is set by the canvas's onConnect when the user drags from
     // a specific source-output handle. Propagating that into the edge's stream
-    // type lets the backend route distinct edges through distinct corelink
-    // streams (avoiding the receiver-subscribes-to-everything commingling).
+    // type lets the backend route distinct edges through distinct subjects
+    // (avoiding the receiver-subscribes-to-everything commingling).
     const candidate = record.streamType ?? record.dataType ?? record.label ?? record.sourceHandle;
 
     if (typeof candidate === 'string' && candidate.trim() && candidate.trim() !== 'default') {
