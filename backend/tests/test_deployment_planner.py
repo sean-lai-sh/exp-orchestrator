@@ -56,12 +56,12 @@ def test_deploy_returns_deterministic_idempotent_plan(linear_workflow: DeployWor
     assert plugin_a_env["EXISTING"] == "1"
     assert plugin_a_env["NODE_ID"] == "plugin-a"
     assert plugin_a_env["NODE_TYPE"] == "plugin"
-    assert plugin_a_env["IN_JSON_STREAM_ID"] == "source_plugin-a_json_stream"
-    assert plugin_a_env["OUT_BYTES_STREAM_ID"] == "plugin-a_plugin-b_bytes_stream"
+    assert plugin_a_env["IN_JSON_STREAM_ID"] == "deploy.abc12345.source_plugin-a_json"
+    assert plugin_a_env["OUT_BYTES_STREAM_ID"] == "deploy.abc12345.plugin-a_plugin-b_bytes"
 
     plugin_b_env = first["env_plan"]["plugin-b"]
     assert plugin_b_env["PLUGIN_B"] == "ready"
-    assert plugin_b_env["IN_BYTES_STREAM_ID"] == "plugin-a_plugin-b_bytes_stream"
+    assert plugin_b_env["IN_BYTES_STREAM_ID"] == "deploy.abc12345.plugin-a_plugin-b_bytes"
 
     assert first["credentials_by_node"]["source"]["out_creds"]["json"]["workspace"] == (
         "workflow_abc12345"
@@ -72,7 +72,7 @@ def test_deploy_returns_deterministic_idempotent_plan(linear_workflow: DeployWor
             for cred in stream_creds.values():
                 assert cred["workspace"] == "workflow_abc12345"
     assert first["credentials_by_node"]["plugin-b"]["in_creds"]["bytes"]["stream_id"] == (
-        "plugin-a_plugin-b_bytes_stream"
+        "deploy.abc12345.plugin-a_plugin-b_bytes"
     )
 
 
@@ -140,7 +140,7 @@ def test_deploy_infers_streams_when_edge_contract_is_present() -> None:
     result = deployment.deploy(workflow, deploy_id="test", workspace="workflow_test")
 
     assert result["topological_order"] == ["source", "plugin-a"]
-    assert result["env_plan"]["plugin-a"]["IN_PARQUET_STREAM_ID"] == "source_plugin-a_parquet_stream"
+    assert result["env_plan"]["plugin-a"]["IN_PARQUET_STREAM_ID"] == "deploy.test.source_plugin-a_parquet"
     assert result["credentials_by_node"]["source"]["out_creds"]["parquet"]["data_type"] == "parquet"
 
 
@@ -161,8 +161,8 @@ def test_deploy_injects_env_only_for_plugins_with_images(
     assert result["skipped_nodes"] == [
         {"node_id": "plugin-b", "reason": "No runtime/container image found"}
     ]
-    assert injected[0][1]["IN_JSON_STREAM_ID"] == "source_plugin-a_json_stream"
-    assert injected[0][1]["OUT_BYTES_STREAM_ID"] == "plugin-a_plugin-b_bytes_stream"
+    assert injected[0][1]["IN_JSON_STREAM_ID"] == "deploy.test.source_plugin-a_json"
+    assert injected[0][1]["OUT_BYTES_STREAM_ID"] == "deploy.test.plugin-a_plugin-b_bytes"
 
 
 def test_inject_vars_to_image_uses_disposable_compose_file(
@@ -194,32 +194,24 @@ def test_inject_vars_to_image_uses_disposable_compose_file(
     assert not compose_file.exists()
 
 
-def test_corelink_env_injected_for_plugins_only(linear_workflow: DeployWorkflow) -> None:
-    corelink = {
-        "host": "1.2.3.4",
-        "port": 20012,
-        "username": "Testuser",
-        "password": "Testpassword",
+def test_broker_env_injected_for_plugins_only(linear_workflow: DeployWorkflow) -> None:
+    broker = {
+        "url": "nats://1.2.3.4:4222",
+        "token": "secret",
     }
     plan = deployment.deploy(
         linear_workflow,
         deploy_id="abc",
         workspace="workflow_abc",
-        corelink_creds=corelink,
+        broker_creds=broker,
         inject_env=False,
     )
     plugin_a = plan["env_plan"]["plugin-a"]
-    assert plugin_a["CORELINK_HOST"] == "1.2.3.4"
-    assert plugin_a["CORELINK_PORT"] == "20012"
-    assert plugin_a["CORELINK_USERNAME"] == "Testuser"
-    assert plugin_a["CORELINK_PASSWORD"] == "Testpassword"
-
-    # Sender/receiver nodes don't get plugin-only injection
-    # In the linear_workflow fixture there's no receiver, but plugin-b is type=plugin too.
-    # Just confirm no extraneous keys leaked.
+    assert plugin_a["NATS_URL"] == "nats://1.2.3.4:4222"
+    assert plugin_a["NATS_TOKEN"] == "secret"
 
 
-def test_corelink_env_omitted_when_creds_not_provided(linear_workflow: DeployWorkflow) -> None:
+def test_broker_env_omitted_when_creds_not_provided(linear_workflow: DeployWorkflow) -> None:
     plan = deployment.deploy(
         linear_workflow,
         deploy_id="abc",
@@ -227,5 +219,5 @@ def test_corelink_env_omitted_when_creds_not_provided(linear_workflow: DeployWor
         inject_env=False,
     )
     plugin_a = plan["env_plan"]["plugin-a"]
-    assert "CORELINK_HOST" not in plugin_a
-    assert "CORELINK_PASSWORD" not in plugin_a
+    assert "NATS_URL" not in plugin_a
+    assert "NATS_TOKEN" not in plugin_a

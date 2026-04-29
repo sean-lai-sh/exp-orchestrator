@@ -1,0 +1,19 @@
+{
+  "name": "exp-orchestrator",
+  "version": "0.1.0",
+  "description": "CLI for connecting to deployments managed by the exp-orchestrator backend",
+  "private": false,
+  "license": "MIT",
+  "bin": {
+    "exp-orchestrator": "cli/bin/exp-orchestrator.js"
+  },
+  "scripts": {
+    "test": "node --test 'cli/lib/__tests__/**/*.test.js'"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "nats": "^2.29.3"
+  }
+}

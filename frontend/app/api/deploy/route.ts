@@ -25,8 +25,7 @@ export async function POST(request: NextRequest) {
 
   // Best-effort: DELETE any deployments still active in the orchestrator
   // before creating a new one. Without this, repeated canvas-deploy clicks
-  // leave orphan plugin containers running (and orphan corelink workspaces
-  // bloating the corelink-server's stream-relay state).
+  // leave orphan plugin containers running.
   try {
     const listRes = await fetch(`${BACKEND_URL}/deployments`);
     if (listRes.ok) {

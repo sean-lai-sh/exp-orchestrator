@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-from corelink_health import CorelinkStatus, HealthReport
+from broker_health import BrokerStatus, HealthReport
 from inventory import ManagedServer, get_available_servers
 
 
@@ -18,25 +18,25 @@ class AllocationDecision:
 def allocate_nodes(
     queued_plugins: List[str],
     node_requirements: Dict[str, dict],
-    corelink_health: HealthReport,
+    broker_health: HealthReport,
 ) -> List[AllocationDecision]:
     """Decide placement for each queued plugin node.
 
     Strategies:
-      - "deferred": Corelink is unreachable, cannot safely place nodes
+      - "deferred": Broker is unreachable, cannot safely place nodes
       - "managed": Assigned to a managed server from inventory
       - "local": No managed capacity available, fall back to local Docker
     """
     decisions: List[AllocationDecision] = []
 
-    if corelink_health.status == CorelinkStatus.UNREACHABLE:
+    if broker_health.status == BrokerStatus.UNREACHABLE:
         for node_id in queued_plugins:
             decisions.append(
                 AllocationDecision(
                     node_id=node_id,
                     server_id=None,
                     strategy="deferred",
-                    reason="corelink_unreachable",
+                    reason="broker_unreachable",
                 )
             )
         return decisions
