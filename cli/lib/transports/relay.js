@@ -6,7 +6,7 @@
 const httpStream = require('http')
 const httpsStream = require('https')
 
-async function connect({ host, deployId, role, credentials, _fetch = globalThis.fetch }) {
+async function connect({ host, deployId, role, _fetch = globalThis.fetch }) {
   return { host, deployId, role, _fetch }
 }
 
@@ -24,10 +24,8 @@ async function send(handle, message) {
 }
 
 async function subscribe(handle, onMessage) {
-  // Stream Server-Sent Events from /deployments/{id}/messages.
   const url = new URL(`${handle.host}/deployments/${handle.deployId}/messages`)
-  const isHttps = url.protocol === 'https:'
-  const lib = isHttps ? httpsStream : httpStream
+  const lib = url.protocol === 'https:' ? httpsStream : httpStream
   return new Promise((resolve, reject) => {
     const req = lib.get(url, (res) => {
       if (res.statusCode !== 200) {
@@ -52,11 +50,10 @@ async function subscribe(handle, onMessage) {
       res.on('error', reject)
     })
     req.on('error', reject)
-    // Resolve immediately with an unsubscribe — caller blocks elsewhere
     setImmediate(() => resolve(() => req.destroy()))
   })
 }
 
-async function close(handle) { /* nothing to close on relay side */ }
+async function close(_handle) { /* nothing to close on relay side */ }
 
 module.exports = { connect, send, subscribe, close }

@@ -1,11 +1,5 @@
 /**
  * NATS transport — wraps the official `nats` npm client.
- *
- * Each handle wraps a NATS connection plus the per-role credential block
- * (subject + workspace) returned by the orchestrator's credentials endpoint.
- *
- * - sender: resolves a subject from credentials.<type>.stream_id and publishes UTF-8
- * - receiver: subscribes to credentials.<type>.stream_id and forwards each msg
  */
 
 const { connect: natsConnect, StringCodec } = require('nats')
@@ -24,7 +18,7 @@ function _withTimeout(promise, ms, what) {
   ])
 }
 
-async function connect({ host, deployId, role, credentials, natsBlock }) {
+async function connect({ deployId, role, credentials, natsBlock }) {
   if (!natsBlock) {
     throw new Error('nats block missing from credentials response')
   }
