@@ -259,6 +259,115 @@ flips the run state to succeeded.
 Host-process plugins get the same env-var contract; they just run
 without container isolation. The agent invokes them directly.
 
+## Scaling characteristics
+
+The architecture is designed to scale by separating control plane
+(orchestrator), small-message routing (broker), and large-payload
+movement (object storage) into independent layers. Each layer scales
+on its own, and the levers don't interact.
+
+### Per-layer ceilings on commodity hardware
+
+| Layer | Single-node ceiling | Cluster ceiling |
+|---|---|---|
+| Orchestrator backend (FastAPI) | thousands of canvas/API ops/sec | horizontal behind a load balancer |
+| NATS broker — small messages | 5–10M msgs/sec/core | linear with cluster nodes |
+| NATS broker — aggregate bandwidth | ~1–5 GB/s (NIC-bound) | linear with cluster nodes + leaf nodes |
+| MinIO object store — throughput | ~1–3 GB/s | TB/s on multi-node clusters |
+| MinIO — capacity | TB | PB+ |
+| Postgres (run history) | thousands of writes/sec | partition by tenant when needed |
+
+### The pointer pattern is what makes huge data plane possible
+
+Brokers are NOT designed to push GB-scale payloads through their NICs.
+Pushing a 1 GB tensor through NATS even once per second saturates a
+10 GbE link. The pointer pattern fixes this: the broker carries small
+JSON envelopes (~200 bytes), and bytes ride S3/MinIO out-of-band.
+
+```
+Broker bandwidth ÷ envelope size = max sustained pointer rate
+1.25 GB/s ÷ 200 bytes ≈ 6 million pointers/sec
+```
+
+Each pointer references an arbitrarily large blob. The actual
+throughput of the system in MB/sec is bounded by the **slowest of**:
+
+1. The producer's blob upload to S3
+2. The S3 read for the consumer
+3. The plugin's processing speed
+
+Not by broker bandwidth. That's the whole point.
+
+### Scaling levers
+
+When a real workload pushes against a ceiling, here's what to pull —
+each is self-contained, no architectural redesign:
+
+| Bottleneck observed | Lever |
+|---|---|
+| Broker can't keep up with envelope rate | Add NATS cluster nodes; subjects auto-distribute |
+| Pointer envelopes themselves growing too big | Reference shared blob, only emit deltas |
+| S3 reads too slow | MinIO cluster with more disks; parallel multipart download |
+| One plugin too slow on hot stream | Add plugin replicas to a NATS consumer group; broker load-balances |
+| Cross-host blob transfer too slow | NVMe-over-Fabric / RDMA for hot paths; or co-locate plugin with source |
+| Plugin can't fit dataset in RAM | Stream-process — read S3 blob in chunks, don't materialize whole thing |
+| Need cross-DC / cross-lab replication | NATS leaf nodes; MinIO bucket replication |
+| Postgres writes lagging on run-history insertion | Partition `runs` table by `pipeline_id` or `session_id` |
+
+### Co-locating plugin with source for sustained high bandwidth
+
+For instruments that produce sustained multi-GB/s streams (high-speed
+cameras, light-sheet microscopy, electrophysiology arrays), the
+architecture lets you run the first transform plugin **on the same
+host as the source**. Worker-agent scheduling makes this explicit:
+the canvas node declares `requirements: {host_local_to: source_node}`
+or similar, and the orchestrator schedules accordingly.
+
+Once the data is reduced (compressed, downsampled, feature-extracted)
+on the source host, downstream plugins can pick it up via the broker
+without saturating the lab network.
+
+### Concrete lab-workload sizings
+
+| Workload | Sustained data rate | Architecture says |
+|---|---|---|
+| Confocal microscopy | ~50–100 MB/s | Single NATS + single MinIO. Trivial. |
+| Light-sheet microscopy | ~500 MB/s – 1 GB/s burst | Single NATS for pointers; MinIO with NVMe SSD for blobs; plugin streams chunks. |
+| Single-cell sequencing | ~10s GB per session, batch | Batch path; runs to completion. Trivial. |
+| Live electrophysiology (multi-channel) | ~10 MB/s continuous | Streaming path. Trivial. |
+| High-speed camera, ~10 GB/s | sustained, high | Co-locate first transform plugin on the camera host (agent on same machine); transform reduces bandwidth before broker sees it. |
+| Many cameras × many sessions × federated labs | massive | NATS cluster with leaf nodes across DCs; MinIO federated cluster; agents scattered widely; orchestrator sees deploys as ordinary records. |
+
+### Where this stops scaling
+
+There's a soft ceiling at workloads that need **sub-millisecond
+latency on TB/sec aggregate streams** — e.g., autonomous-vehicle
+sensor fusion, real-time MRI reconstruction with sub-frame deadlines,
+financial market data. At that point you're looking at:
+
+- DPDK / RDMA / kernel-bypass networking
+- Aeron, ZeroMQ over shared memory
+- Custom binary protocols
+- Specialized hardware (FPGAs, NICs with onboard compute)
+
+R&D labs almost never operate there. The instruments researchers
+actually run produce data measured in MB/s to a few GB/s, comfortably
+inside what NATS + MinIO + worker-agents handle on commodity hardware.
+
+### What scales the orchestrator, not the data plane
+
+Some scaling questions are about the **control plane**, not data:
+
+| Concern | Lever |
+|---|---|
+| Many concurrent canvas users | Orchestrator behind LB; Convex / Postgres scales reads |
+| Many active deploys at once | Stateless orchestrator + Postgres for run history; horizontal replicas |
+| Many registered worker agents | NATS for agent comms; orchestrator polls scheduler queue, not all agents directly |
+| Schema-driven plugin validation | Cache schemas; lookup at deploy time, not per-message |
+
+These are normal web-app scaling concerns; they don't touch the
+data-plane architecture and aren't blocked by it.
+
 ## Migration arc
 
 This is not a big-bang rewrite. The current demo is small and
