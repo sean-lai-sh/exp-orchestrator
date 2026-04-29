@@ -24,8 +24,16 @@ def _normalize_env_key(stream_type: str) -> str:
     return normalized or "JSON"
 
 
+def _sanitize_subject_token(value: str) -> str:
+    """NATS subject tokens allow [A-Za-z0-9_-]. Map other chars to '_'."""
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_") or "x"
+
+
 def process_workflow(
-    edges: List[DeployEdge], nodes_by_id: Dict[str, DeployNode], workspace: str
+    edges: List[DeployEdge],
+    nodes_by_id: Dict[str, DeployNode],
+    workspace: str,
+    deploy_id: str,
 ) -> int:
     for edge in edges:
         if edge.source not in nodes_by_id:
@@ -52,7 +60,7 @@ def process_workflow(
                 f"Stream type {stream_type} not found in destination {dst.id} in streams"
             )
 
-        cred = generate_pub_sub_cred(stream_type, src, dst, workspace)
+        cred = generate_pub_sub_cred(stream_type, src, dst, workspace, deploy_id)
         src.out_creds[stream_type] = cred
         dst.in_creds[stream_type] = cred
 
@@ -72,12 +80,20 @@ def assign_deployment(deployment_queue: Deque[DeployNode]) -> List[str]:
 
 
 def generate_pub_sub_cred(
-    stream_type: str, src: DeployNode, dst: DeployNode, workspace: str
+    stream_type: str,
+    src: DeployNode,
+    dst: DeployNode,
+    workspace: str,
+    deploy_id: str,
 ) -> StreamCredential:
+    src_tok = _sanitize_subject_token(src.id)
+    dst_tok = _sanitize_subject_token(dst.id)
+    type_tok = _sanitize_subject_token(stream_type)
+    subject = f"deploy.{deploy_id}.{src_tok}_{dst_tok}_{type_tok}"
     return StreamCredential(
         workspace=workspace,
-        protocol="pubsub",
-        stream_id=f"{src.id}_{dst.id}_{stream_type}_stream",
+        protocol="nats",
+        stream_id=subject,
         data_type=stream_type,
         metadata={},
     )
@@ -148,7 +164,7 @@ def deploy(
     workflow: DeployWorkflow,
     deploy_id: str = "local",
     workspace: str | None = None,
-    corelink_creds: Dict[str, Any] | None = None,
+    broker_creds: Dict[str, Any] | None = None,
     inject_env: bool = False,
 ) -> Dict[str, Any]:
     if workspace is None:
@@ -162,7 +178,7 @@ def deploy(
             raise ValueError(f"Edge target '{edge.target}' not found in nodes")
 
     topo_order, dag_graph = _compute_topological_order(nodes_by_id, workflow.edges)
-    process_workflow(workflow.edges, nodes_by_id, workspace)
+    process_workflow(workflow.edges, nodes_by_id, workspace, deploy_id)
 
     ordered_nodes = [nodes_by_id[node_id] for node_id in topo_order]
     deployment_queue: Deque[DeployNode] = deque()
@@ -175,11 +191,9 @@ def deploy(
 
     for node in deployment_queue:
         env_vars = build_env_vars(node)
-        if corelink_creds and node.type == "plugin":
-            env_vars["CORELINK_HOST"] = str(corelink_creds["host"])
-            env_vars["CORELINK_PORT"] = str(corelink_creds["port"])
-            env_vars["CORELINK_USERNAME"] = str(corelink_creds["username"])
-            env_vars["CORELINK_PASSWORD"] = str(corelink_creds["password"])
+        if broker_creds and node.type == "plugin":
+            env_vars["NATS_URL"] = str(broker_creds["url"])
+            env_vars["NATS_TOKEN"] = str(broker_creds.get("token", ""))
         env_plan[node.id] = env_vars
         image_name = fetch_image_name(node)
 

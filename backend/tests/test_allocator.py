@@ -9,22 +9,22 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from allocator import AllocationDecision, allocate_nodes
-from corelink_health import CorelinkStatus, HealthReport
+from broker_health import BrokerStatus, HealthReport
 
 
 @pytest.fixture
-def healthy_corelink() -> HealthReport:
-    return HealthReport(status=CorelinkStatus.HEALTHY, latency_ms=50.0)
+def healthy_broker() -> HealthReport:
+    return HealthReport(status=BrokerStatus.HEALTHY, latency_ms=50.0)
 
 
 @pytest.fixture
-def unreachable_corelink() -> HealthReport:
-    return HealthReport(status=CorelinkStatus.UNREACHABLE, error="timeout")
+def unreachable_broker() -> HealthReport:
+    return HealthReport(status=BrokerStatus.UNREACHABLE, error="timeout")
 
 
 @pytest.fixture
-def unconfigured_corelink() -> HealthReport:
-    return HealthReport(status=CorelinkStatus.UNCONFIGURED)
+def unconfigured_broker() -> HealthReport:
+    return HealthReport(status=BrokerStatus.UNCONFIGURED)
 
 
 @pytest.fixture
@@ -63,27 +63,27 @@ def empty_inventory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return path
 
 
-def test_allocate_defers_when_corelink_unreachable(
-    unreachable_corelink: HealthReport, inventory_with_servers: Path
+def test_allocate_defers_when_broker_unreachable(
+    unreachable_broker: HealthReport, inventory_with_servers: Path
 ) -> None:
     decisions = allocate_nodes(
         queued_plugins=["plugin-a", "plugin-b"],
         node_requirements={},
-        corelink_health=unreachable_corelink,
+        broker_health=unreachable_broker,
     )
     assert len(decisions) == 2
     assert all(d.strategy == "deferred" for d in decisions)
-    assert all(d.reason == "corelink_unreachable" for d in decisions)
+    assert all(d.reason == "broker_unreachable" for d in decisions)
     assert all(d.server_id is None for d in decisions)
 
 
 def test_allocate_managed_when_servers_available(
-    healthy_corelink: HealthReport, inventory_with_servers: Path
+    healthy_broker: HealthReport, inventory_with_servers: Path
 ) -> None:
     decisions = allocate_nodes(
         queued_plugins=["plugin-a"],
         node_requirements={"plugin-a": {}},
-        corelink_health=healthy_corelink,
+        broker_health=healthy_broker,
     )
     assert len(decisions) == 1
     assert decisions[0].strategy == "managed"
@@ -92,12 +92,12 @@ def test_allocate_managed_when_servers_available(
 
 
 def test_allocate_with_label_filter(
-    healthy_corelink: HealthReport, inventory_with_servers: Path
+    healthy_broker: HealthReport, inventory_with_servers: Path
 ) -> None:
     decisions = allocate_nodes(
         queued_plugins=["plugin-gpu"],
         node_requirements={"plugin-gpu": {"labels": ["gpu"]}},
-        corelink_health=healthy_corelink,
+        broker_health=healthy_broker,
     )
     assert len(decisions) == 1
     assert decisions[0].strategy == "managed"
@@ -105,12 +105,12 @@ def test_allocate_with_label_filter(
 
 
 def test_allocate_local_when_no_matching_servers(
-    healthy_corelink: HealthReport, inventory_with_servers: Path
+    healthy_broker: HealthReport, inventory_with_servers: Path
 ) -> None:
     decisions = allocate_nodes(
         queued_plugins=["plugin-special"],
         node_requirements={"plugin-special": {"labels": ["nonexistent"]}},
-        corelink_health=healthy_corelink,
+        broker_health=healthy_broker,
     )
     assert len(decisions) == 1
     assert decisions[0].strategy == "local"
@@ -119,37 +119,37 @@ def test_allocate_local_when_no_matching_servers(
 
 
 def test_allocate_local_when_inventory_empty(
-    healthy_corelink: HealthReport, empty_inventory: Path
+    healthy_broker: HealthReport, empty_inventory: Path
 ) -> None:
     decisions = allocate_nodes(
         queued_plugins=["plugin-a"],
         node_requirements={},
-        corelink_health=healthy_corelink,
+        broker_health=healthy_broker,
     )
     assert len(decisions) == 1
     assert decisions[0].strategy == "local"
 
 
-def test_allocate_with_unconfigured_corelink_still_allocates(
-    unconfigured_corelink: HealthReport, inventory_with_servers: Path
+def test_allocate_with_unconfigured_broker_still_allocates(
+    unconfigured_broker: HealthReport, inventory_with_servers: Path
 ) -> None:
     """Unconfigured != unreachable. Still allocate if servers are available."""
     decisions = allocate_nodes(
         queued_plugins=["plugin-a"],
         node_requirements={},
-        corelink_health=unconfigured_corelink,
+        broker_health=unconfigured_broker,
     )
     assert len(decisions) == 1
     assert decisions[0].strategy == "managed"
 
 
 def test_allocate_multiple_plugins(
-    healthy_corelink: HealthReport, inventory_with_servers: Path
+    healthy_broker: HealthReport, inventory_with_servers: Path
 ) -> None:
     decisions = allocate_nodes(
         queued_plugins=["p1", "p2", "p3"],
         node_requirements={},
-        corelink_health=healthy_corelink,
+        broker_health=healthy_broker,
     )
     assert len(decisions) == 3
     assert all(d.strategy == "managed" for d in decisions)

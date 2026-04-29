@@ -10,10 +10,13 @@ fi
 source .venv/bin/activate
 pip install -q -r requirements.txt
 
-# Corelink integration. Provisioning credentials come back from the corelink-server's
-# /api/provision response — we don't carry CORELINK_USERNAME/PASSWORD here.
-export CORELINK_HOST="${CORELINK_HOST:-host.docker.internal}"
-export CORELINK_PORT="${CORELINK_PORT:-20012}"
-export CORELINK_PROVISION_TOKEN="${CORELINK_PROVISION_TOKEN:-test-token}"
+# NATS broker. NATS_HOST is what the backend uses to reach NATS itself.
+# NATS_PUBLIC_HOST is what plugin containers (in Docker) and host-side scripts
+# get injected/returned — defaults to host.docker.internal so plugins can
+# reach the same broker the backend talks to over localhost.
+export NATS_HOST="${NATS_HOST:-localhost}"
+export NATS_PUBLIC_HOST="${NATS_PUBLIC_HOST:-host.docker.internal}"
+export NATS_PORT="${NATS_PORT:-4222}"
+export NATS_TOKEN="${NATS_TOKEN:-}"
 
 uvicorn main:app --reload --port "${PORT:-8000}"

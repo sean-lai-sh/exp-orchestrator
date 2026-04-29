@@ -15,8 +15,8 @@ from pydantic import BaseModel
 from allowlist import check_workflow_images
 from transforms import apply_pipeline
 from allocator import allocate_nodes
-import corelink_admin
-from corelink_health import check_corelink_health
+import broker_admin
+from broker_health import check_broker_health
 from deployment import deploy
 from executor import execute_dag
 from executors import ContainerSpec, get_executor
@@ -132,10 +132,10 @@ async def readiness():
     return {"status": "ready", "checks": checks}
 
 
-@app.get("/health/corelink")
-async def corelink_health():
-    """Check Corelink server health."""
-    report = await check_corelink_health()
+@app.get("/health/broker")
+async def broker_health():
+    """Check NATS broker health."""
+    report = await check_broker_health()
     return {"status": report.status.value, "latency_ms": report.latency_ms, "error": report.error}
 
 
@@ -154,12 +154,12 @@ async def deploy_with_allocation(payload: DeployWorkflow, inject_env: bool = Fal
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    health = await check_corelink_health()
+    health = await check_broker_health()
     node_requirements = {node.id: node.data.get("requirements", {}) for node in payload.nodes}
     allocation = allocate_nodes(result["queued_plugins"], node_requirements, health)
 
     result["allocation"] = [asdict(d) for d in allocation]
-    result["corelink_health"] = {
+    result["broker_health"] = {
         "status": health.status.value,
         "latency_ms": health.latency_ms,
         "error": health.error,
@@ -175,17 +175,16 @@ async def deploy_and_execute_v2(
     # Mint the deploy_id up-front so it can be the workspace key
     deploy_id = uuid.uuid4().hex[:8]
 
-    # Provision a Corelink workspace + creds for this deployment
+    # Provision broker (NATS) for this deployment
     try:
-        provisioning = await corelink_admin.provision_deployment(deploy_id)
-    except corelink_admin.CorelinkAdminError as exc:
+        provisioning = await broker_admin.provision_deployment(deploy_id)
+    except broker_admin.BrokerAdminError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    corelink_creds = {
-        "host": provisioning.host,
-        "port": provisioning.port,
-        "username": provisioning.username,
-        "password": provisioning.password,
+    nats_url = f"nats://{provisioning.host}:{provisioning.port}"
+    broker_creds = {
+        "url": nats_url,
+        "token": provisioning.token,
     }
 
     effective_inject = inject_env and executor != "noop"
@@ -194,7 +193,7 @@ async def deploy_and_execute_v2(
             payload,
             deploy_id=deploy_id,
             workspace=provisioning.workspace,
-            corelink_creds=corelink_creds,
+            broker_creds=broker_creds,
             inject_env=effective_inject,
         )
     except ValueError as exc:
@@ -231,10 +230,10 @@ async def deploy_and_execute_v2(
         status = await ex.start(spec)
         results.append(asdict(status))
 
-    # NOTE: demo-only — the provisioning blob (incl. corelink password) is stored
+    # NOTE: demo-only — the provisioning blob (incl. NATS token) is stored
     # in process memory and re-emitted by /deployments/{id}/credentials, which has
     # no AuthN/AuthZ. Pre-prod hardening must gate that endpoint or scrub the
-    # password before returning it.
+    # token before returning it.
     deployments[deploy_id] = {
         "plan": plan,
         "execution": results,
@@ -243,8 +242,8 @@ async def deploy_and_execute_v2(
             "workspace": provisioning.workspace,
             "host": provisioning.host,
             "port": provisioning.port,
-            "username": provisioning.username,
-            "password": provisioning.password,
+            "token": provisioning.token,
+            "subject_prefix": provisioning.subject_prefix,
         },
     }
 
@@ -274,7 +273,7 @@ async def get_deployment_credentials(
     deploy_id: str,
     role: str = Query(..., pattern="^(sender|receiver)$"),
 ):
-    """Return Corelink connection credentials for a sender or receiver in a deployment."""
+    """Return NATS connection credentials for a sender or receiver in a deployment."""
     if deploy_id not in deployments:
         raise HTTPException(status_code=404, detail=f"Deployment '{deploy_id}' not found")
 
@@ -311,31 +310,19 @@ async def get_deployment_credentials(
         stream_creds = node_creds.get("in_creds", {})
 
     provisioning = dep.get("provisioning", {})
-    corelink_block = None
+    nats_block = None
     if provisioning:
-        # Different connections to corelink-server must use different users — the
-        # server suppresses stream-update notifications between same-user
-        # connections ("skipping stream from same user"). The plugin container
-        # uses provisioning.username (Testuser); sender/receiver get distinct
-        # seeded users so all three nodes route correctly.
-        # NOTE: demo-only — relies on corelink-server's seeded test users
-        # (Testuser1/Testuser2 with the shared Testpassword). Production would
-        # provision per-deployment users.
-        role_user = {
-            "sender": "Testuser1",
-            "receiver": "Testuser2",
-        }.get(role, provisioning["username"])
-        corelink_block = {
+        nats_block = {
+            "url": f"nats://{provisioning['host']}:{provisioning['port']}",
             "host": provisioning["host"],
             "port": provisioning["port"],
-            "username": role_user,
-            "password": provisioning["password"],
+            "token": provisioning.get("token", ""),
         }
     return {
         "deploy_id": deploy_id,
         "role": role,
         "node_id": node_id,
-        "corelink": corelink_block,
+        "nats": nats_block,
         "credentials": stream_creds,
     }
 
@@ -389,7 +376,7 @@ async def stream_relay_messages(deploy_id: str):
 
 @app.delete("/deployments/{deploy_id}")
 async def delete_deployment(deploy_id: str):
-    """Stop containers, unprovision Corelink workspace, remove deployment record."""
+    """Stop containers, unprovision broker resources, remove deployment record."""
     if deploy_id not in deployments:
         raise HTTPException(status_code=404, detail=f"Deployment '{deploy_id}' not found")
 
@@ -407,10 +394,10 @@ async def delete_deployment(deploy_id: str):
         except Exception as e:
             warnings.append(f"stop {cid} failed: {e}")
 
-    # Unprovision Corelink workspace
+    # Unprovision broker resources (no-op for core NATS)
     try:
-        await corelink_admin.unprovision_deployment(deploy_id)
-    except corelink_admin.CorelinkAdminError as e:
+        await broker_admin.unprovision_deployment(deploy_id)
+    except broker_admin.BrokerAdminError as e:
         warnings.append(f"unprovision failed: {e}")
 
     deployments.pop(deploy_id, None)
