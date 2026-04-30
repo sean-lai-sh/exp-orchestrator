@@ -7,20 +7,45 @@ Configurable via env:
 Adds request correlation IDs via a contextvar that the formatter injects
 into every record. Middleware sets request_id for the duration of each
 request; logs emitted outside a request still emit a "-" placeholder.
+
+Sensitive-looking keys in structured `extra` fields are redacted before
+serialization to avoid leaking tokens/credentials into logs.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+import re
 import sys
 import uuid
 from contextvars import ContextVar
+from typing import Any
 
 from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
+
+_SENSITIVE_KEY_PATTERN = re.compile(
+    r"(?:^|[_-])(token|password|passwd|secret|authorization|api[_-]?key|access[_-]?key|cookie|credential)s?$",
+    re.IGNORECASE,
+)
+_REDACTED = "***"
+
+
+def _scrub(value: Any) -> Any:
+    """Recursively redact values under sensitive-looking keys."""
+    if isinstance(value, dict):
+        return {
+            k: (_REDACTED if _SENSITIVE_KEY_PATTERN.search(str(k)) else _scrub(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_scrub(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_scrub(v) for v in value)
+    return value
 
 
 class _JsonFormatter(logging.Formatter):
@@ -38,7 +63,10 @@ class _JsonFormatter(logging.Formatter):
         for key, value in record.__dict__.items():
             if key in payload or key in _LOG_RECORD_BUILTINS:
                 continue
-            payload[key] = value
+            if _SENSITIVE_KEY_PATTERN.search(str(key)):
+                payload[key] = _REDACTED
+            else:
+                payload[key] = _scrub(value)
         return json.dumps(payload, default=str)
 
 
@@ -101,3 +129,30 @@ def install(app: FastAPI) -> None:
     """Configure logging and attach request-id middleware to the app."""
     configure_logging()
     app.add_middleware(RequestIdMiddleware)
+
+
+def configure_cors(app: FastAPI) -> None:
+    """Attach CORSMiddleware with an explicit origin allowlist.
+
+    Origins come from CORS_ALLOWED_ORIGINS (comma-separated). Default is
+    http://localhost:3000 for local Next dev. A literal "*" is rejected
+    because credentials cannot be combined with a wildcard origin.
+    """
+    from fastapi.middleware.cors import CORSMiddleware
+
+    raw = os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    if "*" in origins:
+        raise RuntimeError(
+            "CORS_ALLOWED_ORIGINS contains '*'. Use an explicit allowlist; "
+            "wildcard is incompatible with credentials and unsafe in prod."
+        )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
+        expose_headers=["X-Request-ID"],
+    )

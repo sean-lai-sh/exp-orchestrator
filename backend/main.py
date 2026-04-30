@@ -24,7 +24,7 @@ from executor import execute_dag
 from executors import ContainerSpec, get_executor
 from health import check_docker
 from inventory import load_inventory
-from logging_config import install as install_logging
+from logging_config import configure_cors, install as install_logging
 from plugin_validation import ValidationResult, registry_login, validate_plugin_upload
 from workflow_types import DeployWorkflow
 
@@ -40,6 +40,7 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=_lifespan)
+configure_cors(app)
 install_logging(app)
 
 # In-memory store of deployment plans keyed by short deployment ID
