@@ -6,6 +6,7 @@ import uuid
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime, timezone
 from typing import Dict, List
 
 from fastapi import FastAPI, HTTPException, Query, UploadFile
@@ -17,7 +18,7 @@ from transforms import apply_pipeline
 from allocator import allocate_nodes
 import broker_admin
 from broker_health import check_broker_health
-from deployment import deploy
+from deployment import deploy, validate_workflow
 from executor import execute_dag
 from executors import ContainerSpec, get_executor
 from health import check_docker
@@ -52,6 +53,19 @@ async def deploy_graph(payload: DeployWorkflow, inject_env: bool = False):
         return {"message": "Deploy plan generated", **result}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/deploy/validate")
+async def validate_deploy(payload: DeployWorkflow):
+    """Validate a workflow DAG before committing to deployment.
+
+    Returns {valid, errors, warnings, topological_order} without touching
+    NATS, Docker, or any other side-effecting resource.
+    """
+    result = validate_workflow(payload)
+    if not result["valid"]:
+        raise HTTPException(status_code=422, detail=result)
+    return result
 
 
 @app.post("/deploy/check-images")
@@ -235,6 +249,9 @@ async def deploy_and_execute_v2(
     # no AuthN/AuthZ. Pre-prod hardening must gate that endpoint or scrub the
     # token before returning it.
     deployments[deploy_id] = {
+        "status": "running",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "stopped_at": None,
         "plan": plan,
         "execution": results,
         "workflow": payload.model_dump(),
@@ -257,14 +274,33 @@ async def deploy_and_execute_v2(
 
 @app.get("/deployments")
 async def list_deployments():
-    """List active deployments."""
+    """List all tracked deployments with summary info."""
     return {
         deploy_id: {
+            "status": dep.get("status", "unknown"),
+            "started_at": dep.get("started_at"),
+            "stopped_at": dep.get("stopped_at"),
             "node_count": dep["plan"]["node_count"],
             "edge_count": dep["plan"]["edge_count"],
             "queued_plugins": dep["plan"]["queued_plugins"],
         }
         for deploy_id, dep in deployments.items()
+    }
+
+
+@app.get("/deployments/{deploy_id}")
+async def get_deployment(deploy_id: str):
+    """Return full details for a single deployment."""
+    if deploy_id not in deployments:
+        raise HTTPException(status_code=404, detail=f"Deployment '{deploy_id}' not found")
+    dep = deployments[deploy_id]
+    return {
+        "deploy_id": deploy_id,
+        "status": dep.get("status", "unknown"),
+        "started_at": dep.get("started_at"),
+        "stopped_at": dep.get("stopped_at"),
+        "plan": dep["plan"],
+        "execution": dep["execution"],
     }
 
 
@@ -401,4 +437,4 @@ async def delete_deployment(deploy_id: str):
         warnings.append(f"unprovision failed: {e}")
 
     deployments.pop(deploy_id, None)
-    return {"status": "deleted", "deploy_id": deploy_id, "warnings": warnings}
+    return {"status": "deleted", "deploy_id": deploy_id, "warnings": warnings, "stopped_at": datetime.now(timezone.utc).isoformat()}

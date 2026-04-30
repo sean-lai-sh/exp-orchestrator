@@ -11,5 +11,4 @@ __all__ = [
     'planner',
     'docker_utils',
     'registry',
-    'workflowprocessor',
 ]
