@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 
@@ -32,18 +33,18 @@ export async function POST(request: NextRequest) {
       const active: Record<string, unknown> = await listRes.json();
       const deployIds = Object.keys(active);
       if (deployIds.length > 0) {
-        console.log('[deploy] cleaning up', deployIds.length, 'previous deployment(s) before launching new one');
+        logger.info('deploy.cleanup.start', { count: deployIds.length });
         await Promise.all(
           deployIds.map((id) =>
             fetch(`${BACKEND_URL}/deployments/${id}`, { method: 'DELETE' })
               .then(() => undefined)
-              .catch((e) => console.warn('[deploy] failed to DELETE deployment:', id, e)),
+              .catch((e) => logger.warn('deploy.cleanup.delete_failed', { deploy_id: id, error: String(e) })),
           ),
         );
       }
     }
   } catch (e) {
-    console.warn('[deploy] previous-deployment cleanup skipped:', e);
+    logger.warn('deploy.cleanup.skipped', { error: String(e) });
   }
 
   let backendRes: Response;
