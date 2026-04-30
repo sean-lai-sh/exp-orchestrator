@@ -8,7 +8,7 @@
     "exp-orchestrator": "cli/bin/exp-orchestrator.js"
   },
   "scripts": {
-    "test": "node --test 'cli/lib/__tests__/**/*.test.js'"
+    "test": "find cli/lib/__tests__ -name '*.test.js' | xargs node --test"
   },
   "engines": {
     "node": ">=18"
