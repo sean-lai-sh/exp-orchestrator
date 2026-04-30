@@ -13,8 +13,6 @@
   "dependencies": {
     "@convex-dev/better-auth": "^0.11.4",
     "@heroicons/react": "^2.2.0",
-    "@liveblocks/client": "^2.24.3",
-    "@liveblocks/react": "^2.24.3",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-collapsible": "^1.1.11",
     "@radix-ui/react-context-menu": "^2.2.15",
