@@ -231,6 +231,63 @@ def deploy(
         "credentials_by_node": creds_by_node,
     }
 
+def validate_workflow(workflow: DeployWorkflow) -> Dict[str, Any]:
+    """Validate a workflow without deploying. Returns {valid, errors, warnings}."""
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    nodes_by_id = {node.id: node for node in workflow.nodes}
+
+    # Edge references
+    for edge in workflow.edges:
+        if edge.source not in nodes_by_id:
+            errors.append(f"Edge source '{edge.source}' not found in nodes")
+        if edge.target not in nodes_by_id:
+            errors.append(f"Edge target '{edge.target}' not found in nodes")
+
+    if errors:
+        return {"valid": False, "errors": errors, "warnings": warnings}
+
+    # Cycle check via topological sort
+    try:
+        dag_edges = [DagEdge(src=e.source, dst=e.target) for e in workflow.edges]
+        topo_order, _ = topological_order(nodes_by_id.keys(), dag_edges)
+    except ValueError as exc:
+        errors.append(str(exc))
+        return {"valid": False, "errors": errors, "warnings": warnings}
+
+    # Stream type compatibility on each edge
+    for edge in workflow.edges:
+        src = nodes_by_id[edge.source]
+        dst = nodes_by_id[edge.target]
+        stream_type = _normalize_stream(edge.data or "json")
+
+        if src.out_streams and stream_type not in src.out_streams:
+            errors.append(
+                f"Edge {edge.source}→{edge.target}: stream '{stream_type}' not in "
+                f"source out_streams {src.out_streams}"
+            )
+        if dst.in_streams and stream_type not in dst.in_streams:
+            errors.append(
+                f"Edge {edge.source}→{edge.target}: stream '{stream_type}' not in "
+                f"target in_streams {dst.in_streams}"
+            )
+
+    # Plugin nodes without a runtime image
+    for node in workflow.nodes:
+        if node.type == "plugin" and not (node.runtime or node.data.get("runtime") or node.data.get("containerImage")):
+            warnings.append(f"Plugin node '{node.id}' has no runtime/container image")
+
+    # Disconnected nodes (no edges touching them)
+    if len(workflow.nodes) > 1:
+        connected_ids = {e.source for e in workflow.edges} | {e.target for e in workflow.edges}
+        for node in workflow.nodes:
+            if node.id not in connected_ids:
+                warnings.append(f"Node '{node.id}' is not connected to any edge")
+
+    return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings, "topological_order": topo_order}
+
+
 if __name__ == "__main__":
     example_workflow = DeployWorkflow(
         nodes=[
