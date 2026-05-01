@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import uuid
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -23,17 +24,24 @@ from executor import execute_dag
 from executors import ContainerSpec, get_executor
 from health import check_docker
 from inventory import load_inventory
+from logging_config import configure_cors, install as install_logging
 from plugin_validation import ValidationResult, registry_login, validate_plugin_upload
 from workflow_types import DeployWorkflow
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     registry_login()
+    logger.info("backend.startup", extra={"event": "startup"})
     yield
+    logger.info("backend.shutdown", extra={"event": "shutdown"})
 
 
 app = FastAPI(lifespan=_lifespan)
+configure_cors(app)
+install_logging(app)
 
 # In-memory store of deployment plans keyed by short deployment ID
 deployments: Dict[str, dict] = {}
@@ -64,7 +72,20 @@ async def validate_deploy(payload: DeployWorkflow):
     """
     result = validate_workflow(payload)
     if not result["valid"]:
+        logger.info(
+            "deploy.validate.failed",
+            extra={
+                "event": "deploy.validate.failed",
+                "errors": result.get("errors"),
+                "warnings": result.get("warnings"),
+                "node_count": len(payload.nodes),
+            },
+        )
         raise HTTPException(status_code=422, detail=result)
+    logger.info(
+        "deploy.validate.ok",
+        extra={"event": "deploy.validate.ok", "node_count": len(payload.nodes)},
+    )
     return result
 
 
@@ -122,7 +143,19 @@ async def upload_plugin(file: UploadFile) -> ValidationResult:
 
     result = validate_plugin_upload(filename if is_zip else "Dockerfile", content)
     if not result.valid:
+        logger.info(
+            "plugin.upload.invalid",
+            extra={
+                "event": "plugin.upload.invalid",
+                "filename": filename,
+                "errors": result.errors,
+            },
+        )
         raise HTTPException(status_code=422, detail=result.errors)
+    logger.info(
+        "plugin.upload.ok",
+        extra={"event": "plugin.upload.ok", "filename": filename},
+    )
     return result
 
 
@@ -264,6 +297,17 @@ async def deploy_and_execute_v2(
         },
     }
 
+    logger.info(
+        "deploy.executed",
+        extra={
+            "event": "deploy.executed",
+            "deploy_id": deploy_id,
+            "executor": executor,
+            "node_count": plan["node_count"],
+            "edge_count": plan["edge_count"],
+            "queued": len(plan["queued_plugins"]),
+        },
+    )
     return {
         "message": "Deploy executed",
         "deploy_id": deploy_id,
@@ -429,12 +473,26 @@ async def delete_deployment(deploy_id: str):
             await ex.stop(cid)
         except Exception as e:
             warnings.append(f"stop {cid} failed: {e}")
+            logger.warning(
+                "deploy.delete.stop_failed",
+                extra={"event": "deploy.delete.stop_failed", "deploy_id": deploy_id, "container_id": cid},
+                exc_info=True,
+            )
 
     # Unprovision broker resources (no-op for core NATS)
     try:
         await broker_admin.unprovision_deployment(deploy_id)
     except broker_admin.BrokerAdminError as e:
         warnings.append(f"unprovision failed: {e}")
+        logger.warning(
+            "deploy.delete.unprovision_failed",
+            extra={"event": "deploy.delete.unprovision_failed", "deploy_id": deploy_id},
+            exc_info=True,
+        )
 
     deployments.pop(deploy_id, None)
+    logger.info(
+        "deploy.deleted",
+        extra={"event": "deploy.deleted", "deploy_id": deploy_id, "warnings_count": len(warnings)},
+    )
     return {"status": "deleted", "deploy_id": deploy_id, "warnings": warnings, "stopped_at": datetime.now(timezone.utc).isoformat()}
