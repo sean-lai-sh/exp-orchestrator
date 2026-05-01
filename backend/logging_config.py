@@ -27,11 +27,21 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 
+# A key is considered sensitive if one of the listed keywords appears as a
+# whole word — bounded by start/end-of-string or a `-`/`_` separator on either
+# side. This catches `token`, `access_token`, `password_hash`, `client-secret`,
+# `Authorization`, etc., without matching `tokenizer_name` or `secrets_manager`.
 _SENSITIVE_KEY_PATTERN = re.compile(
-    r"(?:^|[_-])(token|password|passwd|secret|authorization|api[_-]?key|access[_-]?key|cookie|credential)s?$",
+    r"(?:^|[_-])(token|password|passwd|secret|authorization|api[_-]?key|access[_-]?key|cookie|credential)s?(?:$|[_-])",
     re.IGNORECASE,
 )
 _REDACTED = "***"
+
+# Inbound X-Request-ID must be safe to embed in structured logs and the
+# response header. Cap length and restrict charset to avoid log injection
+# (newlines, ANSI escapes) and oversized payloads.
+_REQUEST_ID_MAX_LEN = 64
+_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def _scrub(value: Any) -> Any:
@@ -115,7 +125,15 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
-        rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+        inbound = request.headers.get("x-request-id")
+        if (
+            inbound
+            and len(inbound) <= _REQUEST_ID_MAX_LEN
+            and _REQUEST_ID_PATTERN.match(inbound)
+        ):
+            rid = inbound
+        else:
+            rid = uuid.uuid4().hex[:12]
         token = request_id_var.set(rid)
         try:
             response = await call_next(request)

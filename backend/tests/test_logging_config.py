@@ -51,6 +51,19 @@ def test_scrub_does_not_redact_innocuous_keys():
     assert _scrub(payload) == payload
 
 
+def test_scrub_redacts_keywords_when_separator_follows():
+    # Keywords with a separator on the trailing side should also redact, e.g.
+    # `password_hash`, `token_id`, `secret_value`.
+    payload = {
+        "password_hash": "h",
+        "token_id": "t",
+        "secret_value": "s",
+        "api_key_v2": "k",
+    }
+    scrubbed = _scrub(payload)
+    assert all(v == "***" for v in scrubbed.values())
+
+
 def test_json_formatter_redacts_sensitive_extra_fields():
     formatter = _JsonFormatter()
     record = logging.LogRecord(
@@ -93,6 +106,35 @@ def test_request_id_middleware_honors_inbound_header():
         r = client.get("/echo", headers={"X-Request-ID": "fixed-id-123"})
         assert r.headers["x-request-id"] == "fixed-id-123"
         assert r.json()["rid"] == "fixed-id-123"
+
+
+@pytest.mark.parametrize(
+    "malicious",
+    [
+        "bad id with spaces",
+        "newline\ninjected",
+        "ansi\x1b[31mred",
+        "x" * 200,  # too long
+        "drop;table",
+        "",  # empty after strip
+    ],
+)
+def test_request_id_middleware_rejects_malicious_inbound(malicious):
+    app = FastAPI()
+    install(app)
+
+    @app.get("/echo")
+    def echo():
+        return {"rid": request_id_var.get()}
+
+    with TestClient(app) as client:
+        r = client.get("/echo", headers={"X-Request-ID": malicious})
+        # The malicious value must not be reflected; a fresh id is minted.
+        rid = r.headers["x-request-id"]
+        assert rid != malicious
+        assert "\n" not in rid and "\x1b" not in rid
+        assert len(rid) <= 64
+        assert r.json()["rid"] == rid
 
 
 def test_configure_cors_rejects_wildcard(monkeypatch):
