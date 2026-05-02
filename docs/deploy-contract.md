@@ -20,8 +20,8 @@ The frontend and backend share a single deploy payload contract defined by the `
 | `runtime` | `string \| null` | `null` | Container image reference (e.g., `"my-plugin:latest"`) |
 | `in_streams` | `string[]` | `[]` | Stream types this node accepts |
 | `out_streams` | `string[]` | `[]` | Stream types this node produces |
-| `in_creds` | `Record<string, StreamCredential>` | `{}` | Input stream credentials |
-| `out_creds` | `Record<string, StreamCredential>` | `{}` | Output stream credentials |
+| `in_creds` | `StreamCredential[]` | `[]` | Input stream credentials, one per inbound edge |
+| `out_creds` | `StreamCredential[]` | `[]` | Output stream credentials, one per outbound edge |
 | `env_vars` | `Record<string, string>` | `{}` | Environment variables |
 | `data` | `Record<string, any>` | `{}` | Arbitrary metadata (name, description) |
 
@@ -37,11 +37,38 @@ The frontend and backend share a single deploy payload contract defined by the `
 
 | Field | Type | Default |
 |-------|------|---------|
+| `peer_id` | `string` | `""` |
 | `workspace` | `string` | required |
 | `protocol` | `string` | `"pubsub"` |
 | `stream_id` | `string` | required |
 | `data_type` | `string` | required |
 | `metadata` | `Record<string, any>` | `{}` |
+
+`peer_id` is the counterparty node id: for an entry in `in_creds`, it is
+the source node; for `out_creds`, it is the target node. This lets a node
+distinguish multiple inbound or outbound edges of the same `data_type`
+(fan-in / fan-out).
+
+### Plugin env-var contract
+
+For each cred, `build_env_vars` emits four variables. The peer id is
+upper-cased and non-alphanumeric characters become `_`:
+
+```
+IN_<TYPE>_FROM_<PEER>_STREAM_ID
+IN_<TYPE>_FROM_<PEER>_WORKSPACE
+IN_<TYPE>_FROM_<PEER>_PROTOCOL
+IN_<TYPE>_PEERS=peer1,peer2          # comma-separated list per type
+
+OUT_<TYPE>_TO_<PEER>_STREAM_ID
+OUT_<TYPE>_TO_<PEER>_WORKSPACE
+OUT_<TYPE>_TO_<PEER>_PROTOCOL
+OUT_<TYPE>_PEERS=peer3
+```
+
+Plugins that pattern-match on `IN_*_STREAM_ID` / `OUT_*_STREAM_ID` (the
+recommended convention, used by `plugins/caesar_cipher`) automatically
+handle fan-in and fan-out without code changes.
 
 ## Example Request
 
@@ -96,22 +123,26 @@ Content-Type: application/json
     "def-456": {
       "NODE_ID": "def-456",
       "NODE_TYPE": "plugin",
-      "IN_JSON_STREAM_ID": "abc-123_def-456_json_stream",
+      "IN_JSON_FROM_ABC_123_STREAM_ID": "deploy.dep.abc-123_def-456_json",
+      "IN_JSON_FROM_ABC_123_WORKSPACE": "workflow_dep",
+      "IN_JSON_FROM_ABC_123_PROTOCOL": "nats",
+      "IN_JSON_PEERS": "ABC_123",
       "EXISTING": "1"
     }
   },
   "credentials_by_node": {
     "abc-123": {
-      "in_creds": {},
-      "out_creds": {
-        "json": {
-          "workspace": "abc-123_def-456_json_workspace",
-          "protocol": "pubsub",
-          "stream_id": "abc-123_def-456_json_stream",
+      "in_creds": [],
+      "out_creds": [
+        {
+          "peer_id": "def-456",
+          "workspace": "workflow_dep",
+          "protocol": "nats",
+          "stream_id": "deploy.dep.abc-123_def-456_json",
           "data_type": "json",
           "metadata": {}
         }
-      }
+      ]
     }
   },
   "injected_nodes": ["def-456"],
