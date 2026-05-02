@@ -2,7 +2,7 @@ import os
 import re
 import subprocess
 import tempfile
-from collections import deque
+from collections import defaultdict, deque
 from typing import Any, Deque, Dict, List, Tuple
 
 from dag import topological_order
@@ -61,8 +61,9 @@ def process_workflow(
             )
 
         cred = generate_pub_sub_cred(stream_type, src, dst, workspace, deploy_id)
-        src.out_creds[stream_type] = cred
-        dst.in_creds[stream_type] = cred
+        # Each side records the OPPOSITE end as the peer.
+        src.out_creds.append(cred.model_copy(update={"peer_id": dst.id}))
+        dst.in_creds.append(cred.model_copy(update={"peer_id": src.id}))
 
     return 200
 
@@ -100,21 +101,49 @@ def generate_pub_sub_cred(
 
 
 def build_env_vars(node: DeployNode) -> Dict[str, str]:
+    """Emit env vars for every inbound and outbound edge.
+
+    Each cred is keyed by both stream type AND peer node id, so a node with
+    multiple inputs of the same type (fan-in) or multiple outputs of the same
+    type (fan-out) gets one env var per edge:
+
+        IN_<TYPE>_FROM_<PEER>_STREAM_ID   (and _WORKSPACE / _PROTOCOL)
+        OUT_<TYPE>_TO_<PEER>_STREAM_ID
+
+    Plugins that pattern-match on `IN_*_STREAM_ID` / `OUT_*_STREAM_ID` (the
+    convention) keep working unchanged. For plugins that want to enumerate
+    peers without parsing var names, we also emit:
+
+        IN_<TYPE>_PEERS=peerA,peerB
+        OUT_<TYPE>_PEERS=peerC
+    """
     env_vars = dict(node.env_vars)
     env_vars["NODE_ID"] = node.id
     env_vars["NODE_TYPE"] = node.type
 
-    for stream_type, cred in node.in_creds.items():
-        stream_key = _normalize_env_key(stream_type)
-        env_vars[f"IN_{stream_key}_STREAM_ID"] = cred.stream_id
-        env_vars[f"IN_{stream_key}_WORKSPACE"] = cred.workspace
-        env_vars[f"IN_{stream_key}_PROTOCOL"] = cred.protocol
+    in_peers_by_type: Dict[str, List[str]] = defaultdict(list)
+    out_peers_by_type: Dict[str, List[str]] = defaultdict(list)
 
-    for stream_type, cred in node.out_creds.items():
-        stream_key = _normalize_env_key(stream_type)
-        env_vars[f"OUT_{stream_key}_STREAM_ID"] = cred.stream_id
-        env_vars[f"OUT_{stream_key}_WORKSPACE"] = cred.workspace
-        env_vars[f"OUT_{stream_key}_PROTOCOL"] = cred.protocol
+    for cred in node.in_creds:
+        type_key = _normalize_env_key(cred.data_type)
+        peer_key = _normalize_env_key(cred.peer_id)
+        env_vars[f"IN_{type_key}_FROM_{peer_key}_STREAM_ID"] = cred.stream_id
+        env_vars[f"IN_{type_key}_FROM_{peer_key}_WORKSPACE"] = cred.workspace
+        env_vars[f"IN_{type_key}_FROM_{peer_key}_PROTOCOL"] = cred.protocol
+        in_peers_by_type[type_key].append(peer_key)
+
+    for cred in node.out_creds:
+        type_key = _normalize_env_key(cred.data_type)
+        peer_key = _normalize_env_key(cred.peer_id)
+        env_vars[f"OUT_{type_key}_TO_{peer_key}_STREAM_ID"] = cred.stream_id
+        env_vars[f"OUT_{type_key}_TO_{peer_key}_WORKSPACE"] = cred.workspace
+        env_vars[f"OUT_{type_key}_TO_{peer_key}_PROTOCOL"] = cred.protocol
+        out_peers_by_type[type_key].append(peer_key)
+
+    for type_key, peers in in_peers_by_type.items():
+        env_vars[f"IN_{type_key}_PEERS"] = ",".join(peers)
+    for type_key, peers in out_peers_by_type.items():
+        env_vars[f"OUT_{type_key}_PEERS"] = ",".join(peers)
 
     return env_vars
 
@@ -208,11 +237,11 @@ def deploy(
         inject_vars_to_image(env_vars, image_name)
         injected_nodes.append(node.id)
 
-    creds_by_node: Dict[str, Dict[str, Dict[str, Dict[str, Any]]]] = {}
+    creds_by_node: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
     for node_id, node in nodes_by_id.items():
         creds_by_node[node_id] = {
-            "in_creds": {stream: cred.model_dump() for stream, cred in node.in_creds.items()},
-            "out_creds": {stream: cred.model_dump() for stream, cred in node.out_creds.items()},
+            "in_creds": [cred.model_dump() for cred in node.in_creds],
+            "out_creds": [cred.model_dump() for cred in node.out_creds],
         }
 
     return {

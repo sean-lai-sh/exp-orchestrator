@@ -31,6 +31,7 @@ class Workflow(BaseModel):
 
 
 class StreamCredential(BaseModel):
+    peer_id: str = ""
     workspace: str
     protocol: str = "pubsub"
     stream_id: str
@@ -44,8 +45,8 @@ class DeployNode(BaseModel):
     runtime: Optional[str] = None
     in_streams: List[str] = Field(default_factory=list)
     out_streams: List[str] = Field(default_factory=list)
-    in_creds: Dict[str, StreamCredential] = Field(default_factory=dict)
-    out_creds: Dict[str, StreamCredential] = Field(default_factory=dict)
+    in_creds: List[StreamCredential] = Field(default_factory=list)
+    out_creds: List[StreamCredential] = Field(default_factory=list)
     env_vars: Dict[str, str] = Field(default_factory=dict)
     data: Dict[str, Any] = Field(default_factory=dict)
 
